@@ -2,155 +2,340 @@
 <!-- === R2R Scale Override (v1) ========================================= -->
 <script>
 (function () {
-  // Public API
-  window.R2R_SCALE = {
-    /** Set a profile by name ('auto' | '4k_jaszdot' | custom) */
-    set(profileName) {
-      const p = PROFILES[profileName] || PROFILES.auto;
-      applyProfile(p);
-      try { localStorage.setItem(LS_KEY, profileName); } catch(_) {}
-      updateToggleLabel();
-    },
-    /** Read the active profile name */
-    get current() { return document.documentElement.getAttribute('data-scale') || 'auto'; },
-  };
+  const STORAGE_KEY = 'r2r.scaleProfile';
+  const DEFAULT_PROFILE = 'auto';
+  const PROFILE_ORDER = ['auto', '4k_jaszdot'];
+  const CANDIDATE_SELECTORS = [
+    '#rs-config', '#configBar', '#rs-float-header', '#toolbar',
+    '.rs-config', '.config-bar', '.toolbar', '.rs-float-header'
+  ];
 
-  // -------- Profiles you can tweak in one place ----------
   const PROFILES = {
     auto: {
       name: 'auto',
+      label: 'Auto',
       rootVars: {
         '--frame-scale': '96vmin',
-        '--frame-max'  : '1280px',
-        '--hudH'       : '96px',
-        '--headerH'    : '96px',
-        '--logoH'      : '100px',
+        '--frame-max': '1280px',
+        '--hudH': '96px',
+        '--headerH': '96px',
+        '--logoH': '100px'
       },
       htmlClasses: ['scale-auto']
     },
 
-    // Tuned for: Jaszdot 65" 4K panel + Android 13 WebView
-    // Bigger HUD/headers, larger frame allowance, no CSS transform blur.
     '4k_jaszdot': {
       name: '4k_jaszdot',
+      label: '4K Jaszdot',
       rootVars: {
         '--frame-scale': '130vmin',
-        '--frame-max'  : '2160px',
-        '--hudH'       : '160px',
-        '--headerH'    : '140px',
-        '--logoH'      : '140px'
+        '--frame-max': '2160px',
+        '--hudH': '160px',
+        '--headerH': '140px',
+        '--logoH': '140px'
       },
       htmlClasses: ['scale-4k']
     }
   };
 
-  const LS_KEY = 'r2r.scaleProfile';
+  let toggleButton = null;
+  let resizeTimer = null;
+  let placementObserver = null;
+  let profileClassSet = buildProfileClassSet();
 
-  function applyProfile(profile) {
-    const root = document.documentElement;
-    root.setAttribute('data-scale', profile.name);
-
-    // set CSS custom properties
-    for (const [k, v] of Object.entries(profile.rootVars)) {
-      root.style.setProperty(k, v);
-    }
-
-    // manage helper classes
-    Object.values(PROFILES).forEach(p =>
-      p.htmlClasses?.forEach(c => root.classList.remove(c))
-    );
-    profile.htmlClasses?.forEach(c => root.classList.add(c));
-  }
-
-  function initialProfile() {
-    const url = new URL(location.href);
-    const urlScale = url.searchParams.get('scale'); // e.g. ?scale=4k_jaszdot
-    if (urlScale && PROFILES[urlScale]) return urlScale;
-
-    try {
-      const saved = localStorage.getItem(LS_KEY);
-      if (saved && PROFILES[saved]) return saved;
-    } catch (_) {}
-
-    // Heuristic: favor 4k_jaszdot on large, high-DPI displays
-    const w = Math.max(screen.width, screen.height);
-    const h = Math.min(screen.width, screen.height);
-    const dpr = window.devicePixelRatio || 1;
-    if (w >= 3000 && h >= 1600 && dpr >= 1.5) return '4k_jaszdot';
-
-    return 'auto';
-  }
-
-  // Toggle UI injection (non-destructive)
-  function injectScaleToggle() {
-    if (document.getElementById('r2r-scale-toggle')) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'r2r-scale-toggle';
-    btn.type = 'button';
-    btn.style.marginLeft = '8px';
-    btn.style.whiteSpace = 'nowrap';
-    btn.className = 'r2r-chip r2r-chip-scale'; // allow local CSS to target
-    btn.addEventListener('click', () => {
-      const next = (window.R2R_SCALE.current === '4k_jaszdot') ? 'auto' : '4k_jaszdot';
-      window.R2R_SCALE.set(next);
+  function buildProfileClassSet() {
+    const classes = new Set();
+    Object.values(PROFILES).forEach(profile => {
+      (profile.htmlClasses || []).forEach(cls => classes.add(cls));
     });
+    return classes;
+  }
 
-    function tryAttachTo(el) {
-      if (!el) return false;
-      try { el.appendChild(btn); return true; } catch { return false; }
+  function rebuildProfileClassSet() {
+    profileClassSet = buildProfileClassSet();
+  }
+
+  function normalizeProfileName(name) {
+    return (name && PROFILES[name]) ? name : DEFAULT_PROFILE;
+  }
+
+  function getCurrentProfileName() {
+    const attr = document.documentElement.getAttribute('data-scale');
+    return normalizeProfileName(attr);
+  }
+
+  function applyProfile(profileName, { persist = true } = {}) {
+    const normalized = normalizeProfileName(profileName);
+    const profile = PROFILES[normalized];
+    const root = document.documentElement;
+
+    root.setAttribute('data-scale', normalized);
+
+    if (profile.rootVars) {
+      Object.entries(profile.rootVars).forEach(([key, value]) => {
+        root.style.setProperty(key, value);
+      });
     }
 
-    const candidates = [
-      '#rs-config', '#configBar', '#rs-float-header', '#toolbar',
-      '.rs-config', '.config-bar', '.toolbar', '.rs-float-header'
-    ];
-    let attached = false;
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (tryAttachTo(el)) { attached = True; break; }
-    }
+    profileClassSet.forEach(cls => root.classList.remove(cls));
+    (profile.htmlClasses || []).forEach(cls => root.classList.add(cls));
 
-    if (!attached) {
-      // Fallback: unobtrusive fixed chip near top-right
-      btn.style.position = 'fixed';
-      btn.style.top = '8px';
-      btn.style.right = '8px';
-      btn.style.zIndex = '9999';
-      document.body.appendChild(btn);
+    if (persist) {
+      try {
+        localStorage.setItem(STORAGE_KEY, normalized);
+      } catch (_) {}
     }
 
     updateToggleLabel();
+    return normalized;
+  }
+
+  function determineInitialProfileName() {
+    let params = null;
+    try {
+      params = new URLSearchParams(window.location.search || '');
+    } catch (_) {}
+
+    const paramScale = params ? params.get('scale') : null;
+    if (paramScale && PROFILES[paramScale]) {
+      return paramScale;
+    }
+
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && PROFILES[saved]) {
+        return saved;
+      }
+    } catch (_) {}
+
+    const w = Math.max(screen.width, screen.height);
+    const h = Math.min(screen.width, screen.height);
+    const dpr = window.devicePixelRatio || 1;
+    if (w >= 3000 && h >= 1600 && dpr >= 1.5 && PROFILES['4k_jaszdot']) {
+      return '4k_jaszdot';
+    }
+
+    return DEFAULT_PROFILE;
+  }
+
+  function nextProfileName() {
+    const order = PROFILE_ORDER.filter(name => PROFILES[name]);
+    if (!order.length) {
+      return DEFAULT_PROFILE;
+    }
+    const current = getCurrentProfileName();
+    const idx = order.indexOf(current);
+    const nextIndex = idx === -1 ? 0 : (idx + 1) % order.length;
+    return order[nextIndex];
+  }
+
+  function createToggleButton() {
+    const btn = document.createElement('button');
+    btn.id = 'r2r-scale-toggle';
+    btn.type = 'button';
+    btn.className = 'r2r-chip r2r-chip-scale';
+    btn.style.marginLeft = '8px';
+    btn.style.whiteSpace = 'nowrap';
+    btn.addEventListener('click', () => applyProfile(nextProfileName()));
+    return btn;
+  }
+
+  function attachToggleButton() {
+    if (!toggleButton) {
+      toggleButton = createToggleButton();
+    }
+
+    if (toggleButton.isConnected) {
+      return;
+    }
+
+    for (const selector of CANDIDATE_SELECTORS) {
+      const host = document.querySelector(selector);
+      if (host) {
+        try {
+          host.appendChild(toggleButton);
+          toggleButton.dataset.host = selector;
+          updateToggleLabel();
+          return;
+        } catch (_) {}
+      }
+    }
+
+    toggleButton.style.position = 'fixed';
+    toggleButton.style.top = '8px';
+    toggleButton.style.right = '8px';
+    toggleButton.style.zIndex = '9999';
+    document.body.appendChild(toggleButton);
+    toggleButton.dataset.host = 'body';
+    updateToggleLabel();
+  }
+
+  function upgradeTogglePlacement() {
+    if (!toggleButton || toggleButton.dataset.host !== 'body') {
+      return;
+    }
+    for (const selector of CANDIDATE_SELECTORS) {
+      const host = document.querySelector(selector);
+      if (host) {
+        try {
+          host.appendChild(toggleButton);
+          toggleButton.dataset.host = selector;
+          updateToggleLabel();
+          return;
+        } catch (_) {}
+      }
+    }
+  }
+
+  function startPlacementObserver() {
+    if (placementObserver || !('MutationObserver' in window)) {
+      return;
+    }
+    placementObserver = new MutationObserver(() => {
+      if (!toggleButton) {
+        return;
+      }
+      if (!toggleButton.isConnected) {
+        attachToggleButton();
+        return;
+      }
+      upgradeTogglePlacement();
+    });
+    placementObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   function updateToggleLabel() {
-    const btn = document.getElementById('r2r-scale-toggle');
-    if (!btn) return;
-    const cur = window.R2R_SCALE.current;
-    btn.textContent = (cur === '4k_jaszdot') ? 'Scale: 4K Jaszdot' : 'Scale: Auto';
-    btn.setAttribute('aria-pressed', cur === '4k_jaszdot' ? 'true' : 'false');
-    btn.title = 'Toggle display scale profile';
+    if (!toggleButton) {
+      return;
+    }
+    const name = getCurrentProfileName();
+    const profile = PROFILES[name];
+    const label = profile?.label || profile?.name || '';
+    toggleButton.textContent = `Scale: ${label}`;
+    toggleButton.setAttribute('aria-pressed', name !== DEFAULT_PROFILE ? 'true' : 'false');
+    toggleButton.title = 'Toggle display scale profile';
   }
 
-  // Init now
-  const start = initialProfile();
-  applyProfile(PROFILES[start]);
+  function ensureToggleReady() {
+    attachToggleButton();
+    startPlacementObserver();
+  }
 
-  // Re-apply on orientation/resize (WebView quirks)
-  window.addEventListener('orientationchange', () => applyProfile(PROFILES[document.documentElement.getAttribute('data-scale') || start]));
-  window.addEventListener('resize',            () => applyProfile(PROFILES[document.documentElement.getAttribute('data-scale') || start]));
+  function reapplyCurrentProfile() {
+    applyProfile(getCurrentProfileName(), { persist: false });
+  }
 
-  // Make a convenience global
-  window.setScaleProfile = (name) => window.R2R_SCALE.set(name);
+  function queueResizeReapply() {
+    if (resizeTimer) {
+      clearTimeout(resizeTimer);
+    }
+    resizeTimer = window.setTimeout(() => {
+      resizeTimer = null;
+      reapplyCurrentProfile();
+    }, 150);
+  }
 
-  // Inject the toggle as soon as possible, but safely
+  function registerProfile(profileName, config) {
+    if (!profileName || typeof config !== 'object') {
+      return false;
+    }
+    const wasCurrent = getCurrentProfileName() === profileName;
+    const previousProfile = PROFILES[profileName];
+    PROFILES[profileName] = { name: profileName, ...config };
+    if (previousProfile?.htmlClasses) {
+      previousProfile.htmlClasses.forEach(cls => document.documentElement.classList.remove(cls));
+    }
+    if (!PROFILE_ORDER.includes(profileName)) {
+      PROFILE_ORDER.push(profileName);
+    }
+    rebuildProfileClassSet();
+    if (wasCurrent) {
+      applyProfile(profileName);
+    } else {
+      updateToggleLabel();
+    }
+    return true;
+  }
+
+  function removeProfile(profileName) {
+    if (!profileName || profileName === DEFAULT_PROFILE || !PROFILES[profileName]) {
+      return false;
+    }
+    const wasCurrent = getCurrentProfileName() === profileName;
+    const removedProfile = PROFILES[profileName];
+    delete PROFILES[profileName];
+    const idx = PROFILE_ORDER.indexOf(profileName);
+    if (idx >= 0) {
+      PROFILE_ORDER.splice(idx, 1);
+    }
+    if (removedProfile?.htmlClasses) {
+      removedProfile.htmlClasses.forEach(cls => document.documentElement.classList.remove(cls));
+    }
+    rebuildProfileClassSet();
+    if (wasCurrent) {
+      applyProfile(DEFAULT_PROFILE);
+    } else {
+      updateToggleLabel();
+    }
+    return true;
+  }
+
+  function reorderProfiles(nextOrder) {
+    if (!Array.isArray(nextOrder) || !nextOrder.length) {
+      return false;
+    }
+    const seen = new Set();
+    const ordered = [];
+
+    nextOrder.forEach(name => {
+      if (PROFILES[name] && !seen.has(name)) {
+        seen.add(name);
+        ordered.push(name);
+      }
+    });
+
+    Object.keys(PROFILES).forEach(name => {
+      if (!seen.has(name)) {
+        ordered.push(name);
+      }
+    });
+
+    PROFILE_ORDER.length = 0;
+    PROFILE_ORDER.push(...ordered);
+    updateToggleLabel();
+    return true;
+  }
+
+  const initialProfile = determineInitialProfileName();
+  applyProfile(initialProfile);
+
+  window.R2R_SCALE = {
+    set: (profileName) => applyProfile(profileName),
+    get current() {
+      return getCurrentProfileName();
+    },
+    list: () => PROFILE_ORDER.filter(name => PROFILES[name]),
+    get profiles() {
+      return { ...PROFILES };
+    },
+    define: (profileName, config) => registerProfile(profileName, config),
+    remove: (profileName) => removeProfile(profileName),
+    order: (nextOrder) => reorderProfiles(nextOrder)
+  };
+
+  window.setScaleProfile = window.R2R_SCALE.set;
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', injectScaleToggle);
+    document.addEventListener('DOMContentLoaded', ensureToggleReady, { once: true });
   } else {
-    injectScaleToggle();
+    ensureToggleReady();
   }
+
+  window.addEventListener('orientationchange', reapplyCurrentProfile);
+  window.addEventListener('resize', queueResizeReapply, { passive: true });
 })();
 </script>
+
 <style>
   /* Optional minimal styles for the toggle "chip" without altering your base */
   #r2r-scale-toggle {
@@ -164,6 +349,10 @@
     opacity: 0.9;
   }
   #r2r-scale-toggle:hover { opacity: 1; }
+  #r2r-scale-toggle:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
 </style>
 <!-- ==================================================================== -->
 
