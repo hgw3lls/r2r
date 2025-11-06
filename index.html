@@ -2,8 +2,33 @@
 <!-- === R2R PATCH CONFIG =============================================== -->
 <script>
   window.R2R_PATCH_CONFIG = Object.assign({
-    enableScaleToggle: true
+    enableScaleToggle: true,
+    cutPrintFactFontSize: 'clamp(14px, 1.9vmin, 18px)'
   }, window.R2R_PATCH_CONFIG || {});
+</script>
+
+<!-- === R2R Fact Text Config =========================================== -->
+<script>
+  (function () {
+    const config = window.R2R_PATCH_CONFIG || {};
+    const factFontSize = config.cutPrintFactFontSize;
+    if (!factFontSize) {
+      return;
+    }
+
+    const applySize = () => {
+      const root = document.documentElement;
+      if (root) {
+        root.style.setProperty('--r2r-cut-print-fact-font-size', String(factFontSize));
+      }
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', applySize, { once: true });
+    }
+
+    applySize();
+  })();
 </script>
 
 <!-- === R2R Scale Override (v1) ========================================= -->
@@ -5637,7 +5662,7 @@ button.exit.pill {
   .result-overlay .result-sub,
   #resultOverlay #result-fact,
   .result-overlay #result-fact {
-    font-size: clamp(14px, 1.9vmin, 18px) !important;
+    font-size: var(--r2r-cut-print-fact-font-size, clamp(14px, 1.9vmin, 18px)) !important;
     line-height: 1.35 !important;
     max-width: min(88%, 60ch) !important;
   }
