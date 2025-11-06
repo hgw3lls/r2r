@@ -5619,6 +5619,23 @@ button.exit.pill {
 </head>
 <body data-state="splash">
 
+<style>
+  /* CUT/PRINT IT! subtext sizing: keep quiz overlay copy within frame */
+  #resultOverlay .result-sub,
+  .result-overlay .result-sub,
+  #resultOverlay #result-fact,
+  .result-overlay #result-fact {
+    font-size: clamp(14px, 1.9vmin, 18px) !important;
+    line-height: 1.35 !important;
+    max-width: min(88%, 60ch) !important;
+  }
+
+  #resultOverlay .result-sub,
+  .result-overlay .result-sub {
+    margin-top: clamp(6px, 1.2vmin, 12px) !important;
+  }
+</style>
+
 <!-- R2R CONSOLIDATION: Unified HUD root -->
 <div id="HUDRoot" data-hud></div>
 
