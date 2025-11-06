@@ -7502,6 +7502,33 @@ document.addEventListener('DOMContentLoaded', function () {
     // Global-ish state
     window.__HOWTO_STATE__ = window.__HOWTO_STATE__ || { open:false, pausedViaExit:false, exitOverlay:null };
 
+    var removeGlobalTapResume = null;
+
+    function installGlobalTapResume(){
+      if (removeGlobalTapResume) return;
+      var handler = function(ev){
+        if (!window.__HOWTO_STATE__ || !window.__HOWTO_STATE__.open) return;
+        if (!howto || howto.getAttribute('aria-hidden') === 'true') return;
+        // Let the cloned resume/back control run its native logic
+        if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('#howtoResumeMount')){
+          return;
+        }
+        try { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); } catch(_){}
+        resumeQuizHowto();
+      };
+      document.addEventListener('pointerdown', handler, true);
+      removeGlobalTapResume = function(){
+        document.removeEventListener('pointerdown', handler, true);
+        removeGlobalTapResume = null;
+      };
+    }
+
+    function removeGlobalTapResumeTrap(){
+      if (typeof removeGlobalTapResume === 'function'){
+        removeGlobalTapResume();
+      }
+    }
+
     // Utility: find the real EXIT overlay (best-effort)
     function getExitOverlay(){
       // Prefer a visible EXIT overlay that's not our HOWTO
@@ -7624,12 +7651,14 @@ var ex = getExitOverlay();
         howto.setAttribute('aria-hidden','false');
         // Let app know we're paused (if it listens to this)
         try { document.dispatchEvent(new CustomEvent('quiz:pause')); } catch(_){}
+        installGlobalTapResume();
       }, 0);
     }
 
     // Resume: hide HOWTO, restore/close EXIT overlay, and dispatch resume
-    
+
 function resumeQuizHowto(){
+  removeGlobalTapResumeTrap();
   // Hide HOWTO UI first
   if (typeof howto !== 'undefined' && howto && howto.classList) howto.classList.remove('show');
   howto.style.display = 'none';
