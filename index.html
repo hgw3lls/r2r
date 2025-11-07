@@ -4,7 +4,18 @@
   window.R2R_PATCH_CONFIG = Object.assign({
     enableScaleToggle: true,
     enableHelpOverlay: true,
-    cutPrintFactFontSize: 'clamp(14px, 1.9vmin, 18px)'
+    cutPrintFactFontSize: 'clamp(14px, 1.9vmin, 18px)',
+    enableMapWarmup: true,
+    mapMinZoom: 12,
+    mapMaxZoom: 19,
+    mapTilePrefetchZoomRange: [12, 19],
+    mapTilePrefetchRadius: 1,
+    mapTilePrefetchLimit: 48,
+    mapTileCacheSize: null,
+    mapWarmupDelayMs: 320,
+    mapPanDuration: 900,
+    mapFlyDuration: 1600,
+    mapFlyCurve: 1.28
   }, window.R2R_PATCH_CONFIG || {});
 </script>
 
@@ -9455,6 +9466,315 @@ window.__openCredits = function(orderTitles){
       }
     };
   })();
+})();
+</script>
+
+<!-- === MAP RESPONSIVE WARMUP ============================================ -->
+<script>
+(function(){
+  const config = window.R2R_PATCH_CONFIG || {};
+  if (config.enableMapWarmup === false) { return; }
+
+  const MIN_ZOOM = Number.isFinite(config.mapMinZoom) ? config.mapMinZoom : 12;
+  const MAX_ZOOM = Number.isFinite(config.mapMaxZoom) ? config.mapMaxZoom : 19;
+  const PREFETCH_RANGE = (Array.isArray(config.mapTilePrefetchZoomRange) && config.mapTilePrefetchZoomRange.length === 2)
+    ? config.mapTilePrefetchZoomRange : [MIN_ZOOM, MAX_ZOOM];
+  const PREFETCH_RADIUS = Number.isFinite(config.mapTilePrefetchRadius) ? Math.max(0, config.mapTilePrefetchRadius) : 1;
+  const PREFETCH_LIMIT = Number.isFinite(config.mapTilePrefetchLimit) ? Math.max(0, config.mapTilePrefetchLimit) : 48;
+  const TILE_CACHE_SIZE = Number.isFinite(config.mapTileCacheSize) ? config.mapTileCacheSize : null;
+  const WARMUP_DELAY = Number.isFinite(config.mapWarmupDelayMs) ? Math.max(0, config.mapWarmupDelayMs) : 320;
+  const PAN_DURATION = Number.isFinite(config.mapPanDuration) ? config.mapPanDuration : 900;
+  const FLY_DURATION = Number.isFinite(config.mapFlyDuration) ? config.mapFlyDuration : 1600;
+  const FLY_CURVE = Number.isFinite(config.mapFlyCurve) ? config.mapFlyCurve : 1.28;
+  const PAN_EASING = typeof config.mapPanEasing === 'function'
+    ? config.mapPanEasing
+    : function(t){ return 1 - Math.pow(1 - t, 2); };
+  const FLY_EASING = typeof config.mapFlyEasing === 'function'
+    ? config.mapFlyEasing
+    : function(t){ return 1 - Math.pow(1 - t, 2.2); };
+
+  const trackedMaps = new Set();
+  let resizeScheduled = false;
+  let prewarmCalled = false;
+
+  function scheduleResizeAll(){
+    if (resizeScheduled) { return; }
+    resizeScheduled = true;
+    requestAnimationFrame(() => {
+      resizeScheduled = false;
+      trackedMaps.forEach(map => {
+        try { map.resize(); } catch (_) {}
+      });
+    });
+  }
+
+  function registerGlobalResizeWatchers(){
+    if (window.__r2rMapResizeWatchers) { return; }
+    window.__r2rMapResizeWatchers = true;
+    window.addEventListener('resize', scheduleResizeAll, { passive: true });
+    window.addEventListener('orientationchange', scheduleResizeAll, { passive: true });
+    window.addEventListener('fullscreenchange', scheduleResizeAll, { passive: true });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { scheduleResizeAll(); }
+    }, { passive: true });
+  }
+
+  function guardCanvas(map){
+    try {
+      const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+      if (!canvas || canvas.__r2rGuarded) { return; }
+      canvas.__r2rGuarded = true;
+      canvas.addEventListener('webglcontextlost', ev => {
+        try { ev.preventDefault(); } catch (_) {}
+        scheduleResizeAll();
+      }, { passive: false });
+      canvas.addEventListener('webglcontextrestored', () => {
+        scheduleResizeAll();
+      });
+    } catch (_) {}
+  }
+
+  function wrapMotion(map){
+    if (!map || map.__r2rMotionWrapped) { return; }
+    map.__r2rMotionWrapped = true;
+
+    if (typeof map.flyTo === 'function') {
+      const origFly = map.flyTo.bind(map);
+      map.flyTo = function(options){
+        const opts = Object.assign({ duration: FLY_DURATION, curve: FLY_CURVE, easing: FLY_EASING, essential: true }, options || {});
+        return origFly(opts);
+      };
+    }
+
+    if (typeof map.easeTo === 'function') {
+      const origEase = map.easeTo.bind(map);
+      map.easeTo = function(options){
+        const opts = Object.assign({ duration: FLY_DURATION, easing: FLY_EASING, essential: true }, options || {});
+        return origEase(opts);
+      };
+    }
+
+    if (typeof map.panTo === 'function') {
+      const origPan = map.panTo.bind(map);
+      map.panTo = function(target, options){
+        const opts = Object.assign({ duration: PAN_DURATION, easing: PAN_EASING, essential: true }, options || {});
+        return origPan(target, opts);
+      };
+    }
+  }
+
+  function applyZoomBounds(map){
+    try { if (typeof map.setMinZoom === 'function') { map.setMinZoom(MIN_ZOOM); } } catch (_) {}
+    try { if (typeof map.setMaxZoom === 'function') { map.setMaxZoom(MAX_ZOOM); } } catch (_) {}
+    try {
+      if (typeof map.setPrefetchZoomDelta === 'function') {
+        const delta = Math.max(0, Math.min(6, Math.round((PREFETCH_RANGE[1] - PREFETCH_RANGE[0]) / 2) || 2));
+        map.setPrefetchZoomDelta(delta);
+      }
+    } catch (_) {}
+    try {
+      if (typeof map.setMaxTileCacheSize === 'function' && TILE_CACHE_SIZE !== null) {
+        map.setMaxTileCacheSize(TILE_CACHE_SIZE);
+      }
+    } catch (_) {}
+    try {
+      if (typeof map === 'object' && map && 'prefetchTilesOnMove' in map) {
+        map.prefetchTilesOnMove = true;
+      }
+    } catch (_) {}
+  }
+
+  const tileCache = new Set();
+  const prefetchTimers = new WeakMap();
+
+  function lngLatToTile(lng, lat, zoom){
+    const z = Math.max(0, zoom);
+    const scale = Math.pow(2, z);
+    const x = Math.floor(((lng + 180) / 360) * scale);
+    const rad = lat * Math.PI / 180;
+    const y = Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * scale);
+    return { x, y, z };
+  }
+
+  function wrapTileX(value, zoom){
+    const size = Math.pow(2, zoom);
+    let v = value % size;
+    if (v < 0) { v += size; }
+    return Math.max(0, Math.min(size - 1, v));
+  }
+
+  function clampTileY(value, zoom){
+    const size = Math.pow(2, zoom);
+    return Math.max(0, Math.min(size - 1, value));
+  }
+
+  function buildTileUrls(source, tile){
+    const templates = Array.isArray(source && source.tiles) ? source.tiles : null;
+    if (!templates || !templates.length) { return []; }
+    const urls = [];
+    for (const tpl of templates) {
+      if (typeof tpl !== 'string') { continue; }
+      if (!tpl.includes('{z}') || !tpl.includes('{x}') || !tpl.includes('{y}')) { continue; }
+      const url = tpl
+        .replace('{z}', tile.z)
+        .replace('{x}', tile.x)
+        .replace('{y}', tile.y);
+      urls.push(url);
+    }
+    return urls;
+  }
+
+  function schedulePrefetch(map){
+    if (!map) { return; }
+    const existing = prefetchTimers.get(map);
+    if (existing) { window.clearTimeout(existing); }
+    const timer = window.setTimeout(() => {
+      prefetchTimers.delete(map);
+      runPrefetch(map);
+    }, WARMUP_DELAY);
+    prefetchTimers.set(map, timer);
+  }
+
+  function runPrefetch(map){
+    if (!map) { return; }
+    if (typeof fetch !== 'function') { return; }
+    try {
+      const style = map && typeof map.getStyle === 'function' ? map.getStyle() : null;
+      if (!style || !style.sources) { return; }
+      const center = typeof map.getCenter === 'function' ? map.getCenter() : null;
+      if (!center) { return; }
+      const [minZ, maxZ] = PREFETCH_RANGE;
+      const urls = [];
+      for (let z = Math.max(MIN_ZOOM, minZ); z <= Math.min(MAX_ZOOM, maxZ); z++) {
+        const base = lngLatToTile(center.lng, center.lat, z);
+        for (let dx = -PREFETCH_RADIUS; dx <= PREFETCH_RADIUS; dx++) {
+          for (let dy = -PREFETCH_RADIUS; dy <= PREFETCH_RADIUS; dy++) {
+            const tile = {
+              z,
+              x: wrapTileX(base.x + dx, z),
+              y: clampTileY(base.y + dy, z)
+            };
+            Object.keys(style.sources).forEach(sourceId => {
+              const source = style.sources[sourceId];
+              if (!source || typeof source !== 'object') { return; }
+              const sourceUrls = buildTileUrls(source, tile);
+              sourceUrls.forEach(url => {
+                if (!url || tileCache.has(url)) { return; }
+                if (tileCache.size > 2048) { tileCache.clear(); }
+                tileCache.add(url);
+                urls.push(url);
+              });
+            });
+          }
+        }
+      }
+      if (!urls.length) { return; }
+      const limited = urls.slice(0, PREFETCH_LIMIT);
+      limited.forEach(url => {
+        try {
+          fetch(url, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {});
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function attachObservers(map){
+    if (!map || map.__r2rMapObservers) { return; }
+    map.__r2rMapObservers = true;
+    if (typeof map.on === 'function') {
+      map.on('load', () => {
+        applyZoomBounds(map);
+        guardCanvas(map);
+        schedulePrefetch(map);
+      });
+      map.on('moveend', () => schedulePrefetch(map));
+      map.on('zoomend', () => schedulePrefetch(map));
+      map.on('idle', () => scheduleResizeAll());
+      map.on('remove', () => {
+        trackedMaps.delete(map);
+      });
+    }
+    const container = typeof map.getContainer === 'function' ? map.getContainer()
+      : (typeof map.getCanvasContainer === 'function' ? map.getCanvasContainer() : null);
+    if (container && window.ResizeObserver) {
+      const observer = new ResizeObserver(() => scheduleResizeAll());
+      observer.observe(container);
+      if (typeof map.once === 'function') {
+        map.once('remove', () => observer.disconnect());
+      }
+    }
+  }
+
+  function patchMapInstance(map){
+    if (!map || trackedMaps.has(map)) { return; }
+    trackedMaps.add(map);
+    registerGlobalResizeWatchers();
+    if (!prewarmCalled) {
+      prewarmCalled = true;
+      try {
+        if (window.mapboxgl && typeof window.mapboxgl.prewarm === 'function') { window.mapboxgl.prewarm(); }
+      } catch (_) {}
+      try {
+        if (window.maplibregl && typeof window.maplibregl.prewarm === 'function') { window.maplibregl.prewarm(); }
+      } catch (_) {}
+    }
+    applyZoomBounds(map);
+    wrapMotion(map);
+    guardCanvas(map);
+    attachObservers(map);
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => schedulePrefetch(map), { timeout: WARMUP_DELAY + 200 });
+    } else {
+      schedulePrefetch(map);
+    }
+  }
+
+  function wrapMapConstructor(api){
+    if (!api || api.__r2rWrapped) { return; }
+    api.__r2rWrapped = true;
+    const Original = api.Map;
+    if (typeof Original !== 'function') { return; }
+    function WrappedMap(options){
+      const map = new Original(options);
+      patchMapInstance(map);
+      return map;
+    }
+    WrappedMap.prototype = Original.prototype;
+    Object.setPrototypeOf(WrappedMap, Original);
+    api.Map = WrappedMap;
+  }
+
+  function scanForMaps(){
+    if (window.mapboxgl) { wrapMapConstructor(window.mapboxgl); }
+    if (window.maplibregl) { wrapMapConstructor(window.maplibregl); }
+    if (window.MAPLIBRE_GL) { wrapMapConstructor(window.MAPLIBRE_GL); }
+
+    const candidates = [
+      window.map,
+      window.MAP,
+      window.__map,
+      window.__MAP,
+      window.cityMap,
+      window.quizMap
+    ];
+    candidates.forEach(instance => patchMapInstance(instance));
+
+    document.querySelectorAll('.mapboxgl-map, .maplibregl-map, .leaflet-container').forEach(node => {
+      const instance = node && (node._mapboxglMap || node._map || node.__map || (node._leaflet_id ? node._leaflet_id && node._leaflet_map : null));
+      if (instance) {
+        patchMapInstance(instance);
+      }
+    });
+  }
+
+  scanForMaps();
+  const interval = window.setInterval(() => {
+    scanForMaps();
+    if (trackedMaps.size > 0) {
+      window.setTimeout(() => window.clearInterval(interval), 4000);
+    }
+  }, 250);
+
 })();
 </script>
 
