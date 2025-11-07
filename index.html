@@ -8414,9 +8414,12 @@ window.__openCredits = function(orderTitles){
         + '@media (max-width:920px){#rg-grid{grid-template-columns:repeat(4,1fr)}}'
         + '@media (max-width:640px){#rg-grid{grid-template-columns:repeat(3,1fr)}}'
         + '@media (max-width:460px){#rg-grid{grid-template-columns:repeat(2,1fr)}}'
-        + '.rg-card{position:relative;background:#111;border:1px solid #ffffff22;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.55);transform:translateY(8px);opacity:0;animation:rgIn .5s ease forwards}'
+        + '.rg-card{position:relative;background:#111;border:1px solid #ffffff22;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.55);transform:translateY(8px);opacity:0;animation:rgIn .5s ease forwards;cursor:pointer;outline:none}'
         + '@keyframes rgIn{to{opacity:1;transform:none}}'
-        + '.rg-thumb{width:100%;height:0;padding-top:66.666%;background:#222 center/cover no-repeat;display:grid;place-items:center;color:#aaa;font-size:12px}'
+        + '.rg-thumb{position:relative;width:100%;height:0;padding-top:66.666%;background:#222 center/cover no-repeat;display:grid;place-items:center;color:#aaa;font-size:12px;overflow:hidden}'
+        + '.rg-thumb::after{content:"▶";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:3em;height:3em;min-width:48px;min-height:48px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,0.55);color:#fff;font-size:1.1rem;letter-spacing:-0.05em;transition:opacity .25s ease;opacity:0;box-shadow:0 6px 18px rgba(0,0,0,.45)}'
+        + '.rg-card:hover .rg-thumb::after,.rg-card:focus-visible .rg-thumb::after{opacity:1}'
+        + '.rg-card:focus-visible{outline:2px solid #f5d75c;outline-offset:2px}'
         + '.rg-logo{position:absolute;inset:8px 8px auto 8px;height:28px;max-width:calc(100% - 16px);object-fit:contain;mix-blend-mode:screen;filter:drop-shadow(0 2px 6px rgba(0,0,0,.6));pointer-events:none}'
         + '.rg-meta{display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px;color:#fff;font-size:12px}'
         + '.rg-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.95}'
@@ -8442,7 +8445,11 @@ window.__openCredits = function(orderTitles){
     }
     return root;
   }
-  function hideRG(){ var root = document.getElementById('rg-overlay'); if (root) root.style.display = 'none'; }
+  function hideRG(){
+    var root = document.getElementById('rg-overlay');
+    if (root) root.style.display = 'none';
+    try { closeRGPlayer(); } catch(_){}
+  }
 
   function unwrapTitle(x){
     if (typeof x === 'string') return x;
@@ -8477,6 +8484,296 @@ window.__openCredits = function(orderTitles){
     var base = baseFromTitle(title);
     if (base){ return { image: 'images/' + base + '.png', logo: logoFromBase(base), video: 'videos/' + base + '.mp4' }; }
     return null;
+  }
+
+  function infoForTitle(title){
+    if (!title) return null;
+    var raw = String(title).trim();
+    if (!raw) return null;
+    var byTitle = (typeof window !== 'undefined' && window.FILM_BY_TITLE && typeof window.FILM_BY_TITLE === 'object') ? window.FILM_BY_TITLE : null;
+    if (byTitle && byTitle[raw]) return byTitle[raw];
+    var lower = raw.toLowerCase();
+    if (byTitle){
+      for (var key in byTitle){
+        if (!Object.prototype.hasOwnProperty.call(byTitle, key)) continue;
+        if (String(key).toLowerCase() === lower) return byTitle[key];
+      }
+    }
+    var pools = [];
+    if (typeof window !== 'undefined'){ pools = [window.FILMS_DATA, window.FILMS]; }
+    for (var p=0; p<pools.length; p++){
+      var arr = pools[p];
+      if (!Array.isArray(arr)) continue;
+      for (var i=0; i<arr.length; i++){
+        var entry = arr[i];
+        if (entry && entry.title && String(entry.title).toLowerCase() === lower) return entry;
+      }
+    }
+    return null;
+  }
+
+  function escapeHtml(str){
+    var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(str).replace(/[&<>"']/g, function(ch){ return map[ch] || ch; });
+  }
+
+  function fillParagraphs(el, text){
+    if (!el) return false;
+    if (!text){ el.innerHTML=''; el.style.display='none'; return false; }
+    var segments = String(text).trim().split(/\n{2,}/);
+    var html = segments.map(function(seg){
+      var cleaned = escapeHtml(seg.trim());
+      if (!cleaned) return '';
+      return '<p>' + cleaned.replace(/\n/g,'<br>') + '</p>';
+    }).filter(Boolean).join('');
+    el.innerHTML = html || '';
+    el.style.display = html ? '' : 'none';
+    return !!html;
+  }
+
+  var rgPlayerRefs = null;
+  var rgPlayerLastActive = null;
+
+  function ensureRGPlayer(){
+    if (rgPlayerRefs) return rgPlayerRefs;
+    var css = document.getElementById('rg-player-style');
+    if (!css){
+      css = document.createElement('style');
+      css.id = 'rg-player-style';
+      css.textContent = ''
+        + '#rg-player{position:fixed;inset:0;z-index:2147483647;display:none;align-items:center;justify-content:center;}'
+        + '#rg-player.show{display:flex;}'
+        + '#rg-player::before{content:"";position:absolute;inset:0;background:rgba(0,0,0,0.88);backdrop-filter:blur(2px);}'
+        + '#rg-player .rg-player-dialog{position:relative;z-index:1;width:min(92vw,960px);max-height:92vh;display:flex;flex-direction:column;background:#101010;border-radius:18px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.75);}'
+        + '#rg-player .rg-player-close{position:absolute;top:12px;right:12px;z-index:3;background:rgba(0,0,0,0.6);color:#fff;border:0;border-radius:999px;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;}'
+        + '#rg-player .rg-player-close:hover{background:rgba(0,0,0,0.82);}'
+        + '#rg-player .rg-player-media{position:relative;background:#000;}'
+        + '#rg-player video{width:100%;height:auto;max-height:58vh;background:#000;display:block;}'
+        + '#rg-player .rg-player-fallback{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:#fff;background:rgba(0,0,0,0.6);font-size:1.05rem;text-align:center;padding:0 24px;}'
+        + '#rg-player .rg-player-logo{position:absolute;right:16px;bottom:16px;width:clamp(80px,18vmin,160px);max-height:25%;object-fit:contain;filter:drop-shadow(0 6px 12px rgba(0,0,0,0.7));}'
+        + '#rg-player .rg-player-body{padding:18px 22px 24px 22px;display:grid;gap:12px;}'
+        + '#rg-player #rg-player-title{margin:0;font-size:clamp(20px,3.6vmin,28px);color:#f5d75c;font-family:"StandingRoomOnlyNF",Impact,"League Gothic",system-ui,sans-serif;letter-spacing:.02em;}'
+        + '#rg-player .rg-player-summary{margin:0;color:#eae5dd;font-size:clamp(14px,2.6vmin,16px);line-height:1.5;}'
+        + '#rg-player .rg-player-toggle{justify-self:start;background:#1f1f1f;color:#f5d75c;border:1px solid #f5d75c55;border-radius:999px;padding:8px 16px;font-size:0.92rem;letter-spacing:.02em;cursor:pointer;transition:background .2s ease,color .2s ease;}'
+        + '#rg-player .rg-player-toggle:hover{background:#2b2b2b;color:#ffe48a;}'
+        + '#rg-player .rg-player-details{color:#f3f0e8;font-size:0.95rem;line-height:1.55;background:#161616;border-radius:12px;padding:14px 16px;max-height:28vh;overflow:auto;}'
+        + '#rg-player .rg-player-details p{margin:0 0 0.85em 0;}'
+        + '#rg-player .rg-player-details p:last-child{margin-bottom:0;}'
+        + '#rg-player [hidden]{display:none !important;}'
+        + '#rg-player .rg-player-didyouknow{margin-top:0.75em;color:#f0d99c;font-style:italic;}'
+        + 'body.rg-player-open{overflow:hidden;}';
+      document.head.appendChild(css);
+    }
+
+    var root = document.createElement('div');
+    root.id = 'rg-player';
+    root.setAttribute('aria-hidden','true');
+    root.innerHTML = ''
+      + '<div class="rg-player-dialog" role="dialog" aria-modal="true" aria-labelledby="rg-player-title">'
+      + '  <button type="button" class="rg-player-close" data-rg-close aria-label="Close clip">×</button>'
+      + '  <div class="rg-player-media">'
+      + '    <video id="rg-player-video" playsinline controls></video>'
+      + '    <div class="rg-player-fallback">Clip unavailable for this location.</div>'
+      + '    <img class="rg-player-logo" alt="" />'
+      + '  </div>'
+      + '  <div class="rg-player-body">'
+      + '    <h3 id="rg-player-title"></h3>'
+      + '    <p class="rg-player-summary"></p>'
+      + '    <button type="button" class="rg-player-toggle" aria-expanded="false">Show Details</button>'
+      + '    <div class="rg-player-details" hidden>'
+      + '      <div class="rg-player-main"></div>'
+      + '      <div class="rg-player-didyouknow"></div>'
+      + '    </div>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(root);
+
+    var video = root.querySelector('#rg-player-video');
+    var fallback = root.querySelector('.rg-player-fallback');
+    var logo = root.querySelector('.rg-player-logo');
+    var titleEl = root.querySelector('#rg-player-title');
+    var summary = root.querySelector('.rg-player-summary');
+    var toggle = root.querySelector('.rg-player-toggle');
+    var details = root.querySelector('.rg-player-details');
+    var main = root.querySelector('.rg-player-main');
+    var dyk = root.querySelector('.rg-player-didyouknow');
+    var closeBtn = root.querySelector('.rg-player-close');
+
+    if (toggle){
+      toggle.addEventListener('click', function(){
+        var expanded = toggle.getAttribute('aria-expanded') === 'true';
+        var next = !expanded;
+        toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+        toggle.textContent = next ? 'Hide Details' : 'Show Details';
+        if (details) details.hidden = !next;
+      });
+    }
+
+    if (closeBtn){
+      closeBtn.addEventListener('click', function(ev){
+        ev.preventDefault();
+        closeRGPlayer();
+      });
+    }
+
+    root.addEventListener('click', function(ev){
+      if (ev.target === root || (ev.target && ev.target.hasAttribute && ev.target.hasAttribute('data-rg-close'))){
+        ev.preventDefault();
+        closeRGPlayer();
+      }
+    });
+
+    document.addEventListener('keydown', function(ev){
+      if (ev.key === 'Escape' && root.classList.contains('show')){
+        ev.preventDefault();
+        closeRGPlayer();
+      }
+    }, {passive:false});
+
+    rgPlayerRefs = {
+      root: root,
+      video: video,
+      fallback: fallback,
+      logo: logo,
+      title: titleEl,
+      summary: summary,
+      toggle: toggle,
+      details: details,
+      main: main,
+      dyk: dyk,
+      close: closeBtn
+    };
+    return rgPlayerRefs;
+  }
+
+  function closeRGPlayer(){
+    if (!rgPlayerRefs) return;
+    var root = rgPlayerRefs.root;
+    if (root){
+      root.classList.remove('show');
+      root.setAttribute('aria-hidden','true');
+    }
+    document.body.classList.remove('rg-player-open');
+    if (rgPlayerRefs.video){
+      try {
+        rgPlayerRefs.video.pause();
+      } catch(_){}
+      rgPlayerRefs.video.removeAttribute('src');
+      rgPlayerRefs.video.load();
+    }
+    if (rgPlayerRefs.logo){
+      rgPlayerRefs.logo.removeAttribute('src');
+      rgPlayerRefs.logo.style.display = 'none';
+    }
+    if (rgPlayerRefs.fallback){
+      rgPlayerRefs.fallback.style.display = 'none';
+    }
+    if (rgPlayerRefs.details){
+      rgPlayerRefs.details.hidden = true;
+    }
+    if (rgPlayerRefs.toggle){
+      rgPlayerRefs.toggle.setAttribute('aria-expanded','false');
+      rgPlayerRefs.toggle.textContent = 'Show Details';
+    }
+    if (rgPlayerLastActive && typeof rgPlayerLastActive.focus === 'function'){
+      try { rgPlayerLastActive.focus(); } catch(_){}
+    }
+    rgPlayerLastActive = null;
+  }
+
+  function openRGPlayer(opts){
+    var refs = ensureRGPlayer();
+    if (!refs) return;
+    var title = opts && opts.title ? String(opts.title) : '';
+    var item = opts && opts.item;
+    var asset = opts && opts.asset || null;
+    var info = infoForTitle(title) || (item && typeof item === 'object' ? item : null);
+
+    rgPlayerLastActive = document.activeElement;
+
+    var poster = asset && asset.image || (info && info.location && info.location.image) || '';
+    var videoSrc = asset && asset.video || (info && info.location && info.location.video) || '';
+    var logoSrc = asset && asset.logo || (info && info.logo) || '';
+    if (!logoSrc){
+      var baseSrc = videoSrc || poster || '';
+      if (baseSrc){
+        var baseName = baseSrc.replace(/^.*\//,'').replace(/\..+$/,'');
+        var prefix = baseName.split('-')[0];
+        if (prefix){ logoSrc = 'images/films/' + prefix + '.png'; }
+      }
+    }
+
+    if (refs.video){
+      if (poster){ refs.video.setAttribute('poster', poster); }
+      else { refs.video.removeAttribute('poster'); }
+      refs.video.removeAttribute('src');
+      refs.video.load();
+      if (videoSrc){
+        refs.video.style.display = 'block';
+        refs.video.src = videoSrc;
+        refs.video.load();
+        setTimeout(function(){ try { refs.video.play(); } catch(_){} }, 50);
+        if (refs.fallback) refs.fallback.style.display = 'none';
+      } else {
+        refs.video.style.display = 'none';
+        if (refs.fallback) refs.fallback.style.display = 'flex';
+      }
+    }
+
+    if (refs.logo){
+      if (logoSrc){
+        refs.logo.style.display = 'block';
+        refs.logo.src = logoSrc;
+        refs.logo.alt = (title || 'Film') + ' logo';
+      } else {
+        refs.logo.removeAttribute('src');
+        refs.logo.style.display = 'none';
+      }
+    }
+
+    if (refs.title){ refs.title.textContent = title || (info && info.title) || 'Film'; }
+
+    var summaryText = info && info.short ? String(info.short) : '';
+    var dykText = info && info.did_you_know ? String(info.did_you_know) : '';
+    if (!summaryText && dykText){
+      summaryText = dykText;
+      dykText = '';
+    }
+    if (refs.summary){
+      refs.summary.textContent = summaryText;
+      refs.summary.style.display = summaryText ? '' : 'none';
+    }
+
+    var mainText = info && info.main ? String(info.main) : '';
+    var hasMain = fillParagraphs(refs.main, mainText);
+    var hasDyk = fillParagraphs(refs.dyk, dykText);
+    if (refs.dyk){
+      if (hasDyk){ refs.dyk.classList.add('rg-player-didyouknow'); }
+      else { refs.dyk.classList.remove('rg-player-didyouknow'); }
+    }
+
+    var hasDetails = hasMain || hasDyk;
+    if (refs.toggle){
+      if (hasDetails){
+        refs.toggle.style.display = '';
+        refs.toggle.setAttribute('aria-expanded','false');
+        refs.toggle.textContent = 'Show Details';
+        if (refs.details) refs.details.hidden = true;
+      } else {
+        refs.toggle.style.display = 'none';
+        if (refs.details) refs.details.hidden = true;
+      }
+    }
+
+    if (refs.details && !hasDetails){ refs.details.hidden = true; }
+
+    document.body.classList.add('rg-player-open');
+    refs.root.classList.add('show');
+    refs.root.setAttribute('aria-hidden','false');
+
+    if (refs.close){
+      try { refs.close.focus(); } catch(_){}
+    }
   }
 
   function showRG(payload){
@@ -8515,7 +8812,7 @@ window.__openCredits = function(orderTitles){
     sub.textContent = 'Score: ' + correct + ' / ' + total;
 
     grid.innerHTML = '';
-    for (var i=0; i<order.length; i++){
+    for (let i=0; i<order.length; i++){
       var title = order[i];
       var item = Array.isArray(list) ? list[i] : null;
       var asset = assetFromListItem(item, title);
@@ -8534,6 +8831,29 @@ window.__openCredits = function(orderTitles){
       card.appendChild(thumb);
       if (logo){ var lg = document.createElement('img'); lg.className = 'rg-logo'; lg.alt='Logo'; lg.src = logo; card.appendChild(lg); }
       card.appendChild(meta); grid.appendChild(card);
+
+      card.setAttribute('role','button');
+      card.setAttribute('tabindex','0');
+      card.setAttribute('aria-label', 'Play clip for ' + (title || ('Question ' + (i+1))));
+      card.dataset.title = title;
+      if (asset && asset.video) card.dataset.video = asset.video;
+      if (bg) card.dataset.image = bg;
+      if (logo) card.dataset.logo = logo;
+
+      var payload = { title: title, asset: asset, item: item };
+      var activate = function(){ openRGPlayer(payload); };
+
+      card.addEventListener('click', function(ev){
+        ev.preventDefault();
+        activate();
+      });
+
+      card.addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter' || ev.key === ' '){
+          ev.preventDefault();
+          activate();
+        }
+      });
     }
 
     document.getElementById('rg-overlay').style.display = 'block';
