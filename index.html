@@ -108,7 +108,7 @@
     let attached = false;
     for (const sel of candidates) {
       const el = document.querySelector(sel);
-      if (tryAttachTo(el)) { attached = True; break; }
+      if (tryAttachTo(el)) { attached = true; break; }
     }
 
     if (!attached) {
@@ -137,8 +137,14 @@
   applyProfile(PROFILES[start]);
 
   // Re-apply on orientation/resize (WebView quirks)
-  window.addEventListener('orientationchange', () => applyProfile(PROFILES[document.documentElement.getAttribute('data-scale') || start]));
-  window.addEventListener('resize',            () => applyProfile(PROFILES[document.documentElement.getAttribute('data-scale') || start]));
+  function reapplyActiveProfile() {
+    const activeName = document.documentElement.getAttribute('data-scale') || start;
+    const profile = PROFILES[activeName] || PROFILES[start] || PROFILES.auto;
+    applyProfile(profile);
+  }
+
+  window.addEventListener('orientationchange', reapplyActiveProfile);
+  window.addEventListener('resize',            reapplyActiveProfile);
 
   // Make a convenience global
   window.setScaleProfile = (name) => window.R2R_SCALE.set(name);
