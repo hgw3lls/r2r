@@ -3,6 +3,7 @@
 <script>
   window.R2R_PATCH_CONFIG = Object.assign({
     enableScaleToggle: true,
+    enableHelpOverlay: true,
     cutPrintFactFontSize: 'clamp(14px, 1.9vmin, 18px)'
   }, window.R2R_PATCH_CONFIG || {});
 </script>
@@ -373,9 +374,534 @@
 })();
 </script>
 
+<!-- === R2R Help Overlay ============================================== -->
+<script>
+(function () {
+  const config = window.R2R_PATCH_CONFIG || {};
+  if (config.enableHelpOverlay === false) {
+    return;
+  }
+
+  const HELP_BUTTON_ID = 'r2r-help-button';
+  const HELP_OVERLAY_ID = 'r2r-help-overlay';
+  const STYLE_ID = 'r2r-help-style';
+  const CANDIDATE_SELECTORS = [
+    '#rs-config', '#configBar', '#rs-float-header', '#toolbar',
+    '.rs-config', '.config-bar', '.toolbar', '.rs-float-header'
+  ];
+  const FOCUSABLE_SELECTOR = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(', ');
+
+  let domReady = document.readyState !== 'loading';
+  let helpButton = null;
+  let helpOverlay = null;
+  let placementObserver = null;
+  let previousFocus = null;
+
+  document.addEventListener('keydown', handleGlobalKeydown, true);
+
+  if (!domReady) {
+    document.addEventListener('DOMContentLoaded', () => {
+      domReady = true;
+      ensureHelpReady();
+    }, { once: true });
+  } else {
+    ensureHelpReady();
+  }
+
+  function ensureHelpReady() {
+    if (!domReady) {
+      return;
+    }
+    ensureStyles();
+    ensureOverlay();
+    attachHelpButton();
+    startPlacementObserver();
+  }
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) {
+      return;
+    }
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      #${HELP_BUTTON_ID} {
+        font: inherit;
+        line-height: 1;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        background: transparent;
+        cursor: pointer;
+        opacity: 0.9;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      #${HELP_BUTTON_ID}:hover {
+        opacity: 1;
+        transform: translateY(-1px);
+      }
+      #${HELP_BUTTON_ID}.is-active {
+        opacity: 1;
+      }
+      #${HELP_BUTTON_ID}:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 2px;
+      }
+      #${HELP_OVERLAY_ID} {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(24px, 6vmin, 64px);
+        z-index: 12000;
+        color: #f8fafc;
+      }
+      #${HELP_OVERLAY_ID}.is-open {
+        display: flex;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-scrim {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.86), rgba(8, 11, 22, 0.92));
+        backdrop-filter: blur(4px);
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-panel {
+        position: relative;
+        z-index: 1;
+        width: min(560px, 100%);
+        max-height: min(90vh, 640px);
+        overflow-y: auto;
+        background: rgba(12, 19, 35, 0.97);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 20px;
+        box-shadow: 0 30px 70px rgba(15, 23, 42, 0.45);
+        padding: clamp(20px, 4vmin, 32px);
+        display: flex;
+        flex-direction: column;
+        gap: clamp(18px, 3.5vmin, 28px);
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-panel:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.6);
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-title {
+        margin: 0;
+        font-size: clamp(22px, 3.6vmin, 30px);
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-close {
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        border-radius: 999px;
+        background: rgba(30, 41, 59, 0.7);
+        color: inherit;
+        padding: 6px 14px;
+        font: inherit;
+        cursor: pointer;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-close:hover,
+      #${HELP_OVERLAY_ID} .r2r-help-close:focus-visible {
+        background: rgba(59, 130, 246, 0.25);
+        border-color: rgba(148, 163, 184, 0.7);
+        outline: none;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-body {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(12px, 2.8vmin, 20px);
+        font-size: clamp(15px, 2.6vmin, 18px);
+        line-height: 1.6;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-body ul {
+        margin: 0;
+        padding-left: 1.2em;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55em;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-body li {
+        list-style: disc;
+      }
+      #${HELP_OVERLAY_ID} .r2r-help-body strong {
+        color: #bae6fd;
+        font-weight: 700;
+      }
+      #${HELP_OVERLAY_ID} kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.75em;
+        padding: 2px 6px;
+        margin: 0 2px;
+        border-radius: 6px;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        background: rgba(15, 23, 42, 0.75);
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+        font-size: 0.85em;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+      }
+      #${HELP_OVERLAY_ID} a {
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-color: rgba(148, 163, 184, 0.7);
+      }
+      body.r2r-help-overlay-open {
+        overflow: hidden;
+      }
+      @media (max-width: 640px) {
+        #${HELP_OVERLAY_ID} {
+          padding: 24px 12px;
+        }
+        #${HELP_OVERLAY_ID} .r2r-help-panel {
+          width: 100%;
+          max-height: 92vh;
+          border-radius: 16px;
+          gap: clamp(16px, 4vmin, 24px);
+        }
+        #${HELP_OVERLAY_ID} .r2r-help-body {
+          font-size: clamp(14px, 3.8vmin, 17px);
+        }
+      }
+    `;
+    const head = document.head || document.documentElement;
+    head.appendChild(style);
+  }
+
+  function ensureOverlay() {
+    if (helpOverlay || !domReady || !document.body) {
+      return helpOverlay;
+    }
+    helpOverlay = createOverlay();
+    document.body.appendChild(helpOverlay);
+    return helpOverlay;
+  }
+
+  function createHelpButton() {
+    const button = document.createElement('button');
+    button.id = HELP_BUTTON_ID;
+    button.type = 'button';
+    button.className = 'r2r-chip r2r-chip-help';
+    button.textContent = 'Help & Tips';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-expanded', 'false');
+    button.setAttribute('aria-controls', HELP_OVERLAY_ID);
+    button.title = 'Open quick help for controls and tips';
+    button.addEventListener('click', () => toggleOverlay());
+    return button;
+  }
+
+  function attachHelpButton() {
+    if (!helpButton) {
+      helpButton = createHelpButton();
+    }
+    if (helpButton.isConnected) {
+      return;
+    }
+    for (const selector of CANDIDATE_SELECTORS) {
+      const host = document.querySelector(selector);
+      if (host) {
+        try {
+          host.appendChild(helpButton);
+          helpButton.dataset.host = selector;
+          helpButton.style.removeProperty('position');
+          helpButton.style.removeProperty('top');
+          helpButton.style.removeProperty('right');
+          helpButton.style.removeProperty('z-index');
+          helpButton.style.marginLeft = '8px';
+          updateButtonState();
+          return;
+        } catch (_) {}
+      }
+    }
+
+    if (!helpButton.isConnected) {
+      const scaleToggle = document.getElementById('r2r-scale-toggle');
+      const offsetTop = (scaleToggle && scaleToggle.dataset && scaleToggle.dataset.host === 'body') ? 48 : 8;
+      helpButton.style.position = 'fixed';
+      helpButton.style.top = `${offsetTop}px`;
+      helpButton.style.right = '8px';
+      helpButton.style.zIndex = '12010';
+      helpButton.dataset.host = 'body-floating';
+      document.body.appendChild(helpButton);
+      updateButtonState();
+    }
+  }
+
+  function upgradeHelpPlacement() {
+    if (!helpButton || helpButton.dataset.host !== 'body-floating') {
+      return;
+    }
+    for (const selector of CANDIDATE_SELECTORS) {
+      const host = document.querySelector(selector);
+      if (host) {
+        try {
+          host.appendChild(helpButton);
+          helpButton.dataset.host = selector;
+          helpButton.style.removeProperty('position');
+          helpButton.style.removeProperty('top');
+          helpButton.style.removeProperty('right');
+          helpButton.style.removeProperty('z-index');
+          helpButton.style.marginLeft = '8px';
+          updateButtonState();
+          return;
+        } catch (_) {}
+      }
+    }
+  }
+
+  function startPlacementObserver() {
+    if (placementObserver || !('MutationObserver' in window) || !document.body) {
+      return;
+    }
+    placementObserver = new MutationObserver(() => {
+      if (!helpButton) {
+        return;
+      }
+      if (!helpButton.isConnected) {
+        attachHelpButton();
+        return;
+      }
+      upgradeHelpPlacement();
+    });
+    placementObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function createOverlay() {
+    const overlay = document.createElement('div');
+    overlay.id = HELP_OVERLAY_ID;
+    overlay.className = 'r2r-help-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.setAttribute('role', 'presentation');
+
+    const scrim = document.createElement('div');
+    scrim.className = 'r2r-help-scrim';
+    scrim.setAttribute('data-r2r-help-dismiss', '');
+    overlay.appendChild(scrim);
+
+    const panel = document.createElement('div');
+    panel.className = 'r2r-help-panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-labelledby', 'r2r-help-title');
+    panel.tabIndex = -1;
+    overlay.appendChild(panel);
+
+    const header = document.createElement('div');
+    header.className = 'r2r-help-header';
+    panel.appendChild(header);
+
+    const title = document.createElement('h2');
+    title.id = 'r2r-help-title';
+    title.className = 'r2r-help-title';
+    title.textContent = 'Quick tour';
+    header.appendChild(title);
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'r2r-help-close';
+    closeButton.setAttribute('data-r2r-help-dismiss', '');
+    closeButton.textContent = 'Close';
+    header.appendChild(closeButton);
+
+    const body = document.createElement('div');
+    body.className = 'r2r-help-body';
+    body.innerHTML = `
+      <p>Welcome back! Here are a few tips that keep the quiz flowing smoothly for every player.</p>
+      <ul>
+        <li><strong>Answering:</strong> Tap or click the choice you want. On keyboards, use <kbd>Tab</kbd> to move focus and press <kbd>Enter</kbd> or <kbd>Space</kbd> to lock it in.</li>
+        <li><strong>Need a breather?</strong> Open HOWTO to pause. With the latest update you can now tap anywhere outside the panel to resume instantly.</li>
+        <li><strong>Make it fit:</strong> Use the Scale button to resize the game board for kiosks, tablets, or large-format displays.</li>
+        <li><strong>Bonus activities:</strong> CUT/PRINT IT! callouts include printable extras—tune their font size from the patch config when you prep handouts.</li>
+      </ul>
+      <p>Press <kbd>?</kbd> at any time to reopen these tips. Hit <kbd>Esc</kbd> or select Close to jump back into the action.</p>
+    `;
+    panel.appendChild(body);
+
+    overlay.addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest('[data-r2r-help-dismiss]') && isOverlayOpen()) {
+        event.preventDefault();
+        closeOverlay();
+      }
+    });
+
+    return overlay;
+  }
+
+  function isEditableTarget(element) {
+    if (!element) {
+      return false;
+    }
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return !element.readOnly && !element.disabled;
+    }
+    if (element instanceof HTMLElement && element.isContentEditable) {
+      return true;
+    }
+    return false;
+  }
+
+  function isOverlayOpen() {
+    return !!(helpOverlay && helpOverlay.classList.contains('is-open'));
+  }
+
+  function openOverlay() {
+    if (!domReady) {
+      return;
+    }
+    const overlay = ensureOverlay();
+    if (!overlay || isOverlayOpen()) {
+      updateButtonState();
+      return;
+    }
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body?.classList.add('r2r-help-overlay-open');
+    updateButtonState();
+    const panel = overlay.querySelector('.r2r-help-panel');
+    window.setTimeout(() => {
+      panel?.focus({ preventScroll: false });
+    }, 0);
+  }
+
+  function closeOverlay() {
+    if (!isOverlayOpen()) {
+      return;
+    }
+    helpOverlay.classList.remove('is-open');
+    helpOverlay.setAttribute('aria-hidden', 'true');
+    document.body?.classList.remove('r2r-help-overlay-open');
+    updateButtonState();
+    const focusTarget = (previousFocus && document.contains(previousFocus)) ? previousFocus : helpButton;
+    previousFocus = null;
+    window.setTimeout(() => {
+      focusTarget?.focus?.();
+    }, 0);
+  }
+
+  function toggleOverlay() {
+    if (isOverlayOpen()) {
+      closeOverlay();
+    } else {
+      openOverlay();
+    }
+  }
+
+  function updateButtonState() {
+    if (!helpButton) {
+      return;
+    }
+    helpButton.setAttribute('aria-expanded', isOverlayOpen() ? 'true' : 'false');
+    if (isOverlayOpen()) {
+      helpButton.classList.add('is-active');
+    } else {
+      helpButton.classList.remove('is-active');
+    }
+  }
+
+  function trapFocus(event) {
+    if (!isOverlayOpen() || !helpOverlay) {
+      return;
+    }
+    const focusable = Array.from(helpOverlay.querySelectorAll(FOCUSABLE_SELECTOR)).filter(el => {
+      if (!(el instanceof HTMLElement)) {
+        return false;
+      }
+      if (el.hasAttribute('disabled') || el.getAttribute('aria-hidden') === 'true') {
+        return false;
+      }
+      if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
+        return true;
+      }
+      return el === document.activeElement;
+    });
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey) {
+      if (active === first || !helpOverlay.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function handleGlobalKeydown(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+    const key = event.key;
+    const hasSystemModifier = event.altKey || event.ctrlKey || event.metaKey;
+
+    if (!hasSystemModifier && (key === '?' || (key === '/' && event.shiftKey))) {
+      if (isEditableTarget(document.activeElement)) {
+        return;
+      }
+      if (isOverlayOpen()) {
+        event.preventDefault();
+      } else {
+        openOverlay();
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (!isOverlayOpen()) {
+      return;
+    }
+
+    if (!hasSystemModifier && key === 'Escape') {
+      event.preventDefault();
+      closeOverlay();
+      return;
+    }
+
+    if (key === 'Tab') {
+      trapFocus(event);
+    }
+  }
+
+  window.R2R_HELP = {
+    open: () => openOverlay(),
+    close: () => closeOverlay(),
+    toggle: () => toggleOverlay(),
+    get isOpen() {
+      return isOverlayOpen();
+    }
+  };
+})();
+</script>
+
 <style>
   /* Optional minimal styles for the toggle "chip" without altering your base */
-  #r2r-scale-toggle {
+  #r2r-scale-toggle,
+  #r2r-help-button {
     font: inherit;
     line-height: 1;
     padding: 6px 10px;
@@ -385,8 +911,10 @@
     cursor: pointer;
     opacity: 0.9;
   }
-  #r2r-scale-toggle:hover { opacity: 1; }
-  #r2r-scale-toggle:focus-visible {
+  #r2r-scale-toggle:hover,
+  #r2r-help-button:hover { opacity: 1; }
+  #r2r-scale-toggle:focus-visible,
+  #r2r-help-button:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 2px;
   }
