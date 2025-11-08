@@ -8539,6 +8539,7 @@ window.__openCredits = function(orderTitles){
 
   var rgPlayerRefs = null;
   var rgPlayerLastActive = null;
+  var rgIntroRefs = null;
 
   function ensureRGPlayer(){
     if (rgPlayerRefs) return rgPlayerRefs;
@@ -8687,6 +8688,135 @@ window.__openCredits = function(orderTitles){
     rgPlayerLastActive = null;
   }
 
+  function ensureScoreIntro(){
+    if (rgIntroRefs) return rgIntroRefs;
+
+    var css = document.getElementById('rg-intro-style');
+    if (!css){
+      css = document.createElement('style');
+      css.id = 'rg-intro-style';
+      css.textContent = ''
+        + '#rg-intro{position:fixed;inset:0;z-index:2147483646;display:none;align-items:center;justify-content:center;background:#000;opacity:0;transition:opacity .35s ease;}'
+        + '#rg-intro.show{display:flex;opacity:1;}'
+        + '#rg-intro.fade{opacity:0;pointer-events:none;}'
+        + '#rg-intro .rg-intro-stage{position:relative;width:min(92vw,720px);max-height:92vh;display:grid;place-items:center;}'
+        + '#rg-intro video{width:100%;height:auto;max-height:92vh;border-radius:18px;background:#000;box-shadow:0 28px 90px rgba(0,0,0,.7);}'
+        + '#rg-intro .rg-intro-label{position:absolute;inset:auto 0 7%;display:grid;justify-items:center;gap:.35em;font-family:"StandingRoomOnlyNF",Impact,"League Gothic",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:#f5d75c;text-shadow:0 3px 12px rgba(0,0,0,.85);pointer-events:none;}'
+        + '#rg-intro .rg-intro-tier{font-size:clamp(26px,5.5vmin,40px);}'
+        + '#rg-intro .rg-intro-skip{font-size:clamp(14px,2.6vmin,18px);opacity:.78;}'
+        + '#rg-intro [data-rg-intro-skip]{position:absolute;right:18px;top:18px;z-index:3;background:rgba(0,0,0,.65);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:8px 16px;font-size:0.95rem;letter-spacing:.03em;cursor:pointer;transition:background .2s ease,color .2s ease;}'
+        + '#rg-intro [data-rg-intro-skip]:hover{background:rgba(0,0,0,.85);color:#ffe48a;}'
+        + '#rg-intro.hide-display{display:none !important;opacity:0 !important;pointer-events:none !important;}';
+      document.head.appendChild(css);
+    }
+
+    var root = document.createElement('div');
+    root.id = 'rg-intro';
+    root.setAttribute('aria-hidden','true');
+    root.innerHTML = ''
+      + '<div class="rg-intro-stage">'
+      + '  <button type="button" data-rg-intro-skip>Skip</button>'
+      + '  <video playsinline preload="auto"></video>'
+      + '  <div class="rg-intro-label">'
+      + '    <div class="rg-intro-tier"></div>'
+      + '    <div class="rg-intro-skip">Tap to skip</div>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(root);
+
+    var refs = {
+      root: root,
+      video: root.querySelector('video'),
+      tier: root.querySelector('.rg-intro-tier'),
+      skipBtn: root.querySelector('[data-rg-intro-skip]')
+    };
+
+    rgIntroRefs = refs;
+    return refs;
+  }
+
+  function scoreTierInfo(score){
+    var s = typeof score === 'number' && isFinite(score) ? Math.max(0, Math.round(score)) : 0;
+    if (s <= 0) return { key: 'ticket-taker', label: 'Ticket Taker' };
+    if (s <= 2) return { key: 'popcorn', label: 'Popcorn' };
+    if (s <= 4) return { key: 'stand-in', label: 'Stand-In' };
+    if (s <= 6) return { key: 'props', label: 'Props Master' };
+    if (s <= 8) return { key: 'star', label: 'Star' };
+    if (s === 9) return { key: 'director', label: 'Director' };
+    return { key: 'mogul', label: 'Mogul' };
+  }
+
+  function playScoreIntro(score){
+    try{
+      var refs = ensureScoreIntro();
+      if (!refs || !refs.root || !refs.video) return null;
+
+      var info = scoreTierInfo(score);
+      if (!info || !info.key) return null;
+
+      var src = 'videos/' + info.key + '.mp4';
+      refs.video.pause();
+      refs.video.removeAttribute('src');
+      refs.video.load();
+
+      if (refs.tier) refs.tier.textContent = info.label || '';
+
+      var promise = new Promise(function(resolve){
+        var done = false;
+        var root = refs.root;
+
+        function cleanup(){
+          if (done) return;
+          done = true;
+          try{ refs.video.pause(); }catch(_){ }
+          refs.video.removeAttribute('src');
+          refs.video.load();
+          root.classList.add('fade');
+          root.setAttribute('aria-hidden','true');
+          var finish = function(){
+            root.classList.remove('show');
+            root.classList.remove('fade');
+            root.classList.add('hide-display');
+            resolve();
+          };
+          setTimeout(finish, 260);
+          document.removeEventListener('keydown', onKey, true);
+          root.removeEventListener('click', onSkip, true);
+          if (refs.skipBtn) refs.skipBtn.removeEventListener('click', onSkip, true);
+          refs.video.removeEventListener('ended', onEnd);
+          refs.video.removeEventListener('error', onEnd);
+        }
+
+        function onEnd(){ cleanup(); }
+        function onSkip(e){ try{ e.preventDefault(); e.stopPropagation(); }catch(_){ } cleanup(); }
+        function onKey(e){ if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' '){ onSkip(e); } }
+
+        root.classList.remove('hide-display');
+        root.classList.remove('fade');
+        root.classList.add('show');
+        root.setAttribute('aria-hidden','false');
+
+        document.addEventListener('keydown', onKey, true);
+        root.addEventListener('click', onSkip, true);
+        if (refs.skipBtn) refs.skipBtn.addEventListener('click', onSkip, true);
+        refs.video.addEventListener('ended', onEnd);
+        refs.video.addEventListener('error', onEnd);
+
+        refs.video.src = src;
+        refs.video.load();
+        setTimeout(function(){
+          try{ var p = refs.video.play(); if (p && typeof p.then === 'function'){ p.catch(function(){ cleanup(); }); } }
+          catch(_){ cleanup(); }
+        }, 60);
+      });
+
+      return promise;
+    }catch(e){
+      console.error('[2M] score intro failed', e);
+      return null;
+    }
+  }
+
   function openRGPlayer(opts){
     var refs = ensureRGPlayer();
     if (!refs) return;
@@ -8810,6 +8940,7 @@ window.__openCredits = function(orderTitles){
     var total = (payload && payload.totalQuestions) || Math.min(10, order.length || 10);
 
     var root = ensureRGDom();
+    if (root) root.style.display = 'none';
     var sub = root.querySelector('#rg-sub');
     var grid = root.querySelector('#rg-grid');
 
@@ -8862,8 +8993,25 @@ window.__openCredits = function(orderTitles){
       });
     }
 
-    document.getElementById('rg-overlay').style.display = 'block';
-    console.log('[2M] review grid shown with', (order||[]).length, 'items');
+    function reveal(){
+      var overlay = document.getElementById('rg-overlay');
+      if (overlay){
+        overlay.style.display = 'block';
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity .28s ease';
+        requestAnimationFrame(function(){
+          overlay.style.opacity = '1';
+        });
+      }
+      console.log('[2M] review grid shown with', (order||[]).length, 'items');
+    }
+
+    var intro = playScoreIntro(correct);
+    if (intro && typeof intro.then === 'function'){
+      intro.then(reveal).catch(reveal);
+    } else {
+      reveal();
+    }
   }
 
   ['__openCredits','openCredits','openCreditsModal','launchCredits','__showCredits','showCredits'].forEach(function(k){
