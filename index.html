@@ -5309,6 +5309,74 @@ button.exit.pill {
 
 </style>
 
+<style>
+  /* R2R PATCH: Leaflet tile toggle + historic slider */
+  .r2r-tile-control {
+    font-family: 'AdvercaseRegular', sans-serif !important;
+    color: #f3efe4;
+    background: rgba(12, 12, 12, 0.88);
+    border: 1px solid #ffffff22;
+    border-radius: 14px;
+    padding: 12px 14px;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.45);
+    min-width: 220px;
+    max-width: 260px;
+    line-height: 1.4;
+  }
+  .r2r-tile-control h3 {
+    margin: 0 0 8px;
+    font-family: 'AdvercaseBold', sans-serif;
+    font-size: 0.82rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #f5d75c;
+  }
+  .r2r-tile-control .r2r-tile-modes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .r2r-tile-control .r2r-tile-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(22, 22, 22, 0.9);
+    border: 1px solid #ffffff22;
+    border-radius: 10px;
+    padding: 6px 8px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .r2r-tile-control .r2r-tile-option input[type="radio"] {
+    accent-color: #f5d75c;
+  }
+  .r2r-tile-control .r2r-historic-heading {
+    font-family: 'AdvercaseBold', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+    color: #f5d75c;
+  }
+  .r2r-tile-control .r2r-historic-slider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .r2r-tile-control .r2r-historic-slider input[type="range"] {
+    flex: 1;
+    accent-color: #f5d75c;
+  }
+  .r2r-tile-control .r2r-historic-value {
+    min-width: 40px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+  }
+</style>
+
 <!-- R2R PATCH: playback & layout tuning -->
 <style>
   /* GPU hinting for splash video for smoother playback on Android WebView */
@@ -9624,5 +9692,290 @@ window.__openCredits = function(orderTitles){
     // If page already shows splash immediately, ensure our wrapper runs:
     // (If not auto-showing, nothing breaks.)
   });
+})();
+</script>
+
+<!-- R2R PATCH: Tile source toggle + Cleveland historic layer slider -->
+<script>
+(function(){
+  const TILE_MODES = {
+    local:  { label: 'Local',  base: 'tiles' },
+    online: { label: 'Online', base: 'https://reelcleveland.com/reelscreens/tiles' }
+  };
+  const MODE_KEY = 'r2r.tileMode';
+  const OPACITY_KEY = 'r2r.historicOpacity';
+  const HISTORIC_SEGMENT = 'historic/{z}/{x}/{y}.png';
+  const DEFAULT_MODE = 'local';
+  const DEFAULT_OPACITY = 0.7;
+
+  let mapRef = null;
+  let tileMode = readStoredMode();
+  let historicLayer = null;
+  let modeInputs = {};
+  let sliderEl = null;
+  let sliderValueEl = null;
+  let controlBuilt = false;
+  let hookArmed = false;
+
+  function readStoredMode(){
+    try {
+      const saved = localStorage.getItem(MODE_KEY);
+      if (saved && TILE_MODES[saved]) return saved;
+    } catch(_) {}
+    return DEFAULT_MODE;
+  }
+
+  function storeMode(value){
+    try { localStorage.setItem(MODE_KEY, value); } catch(_) {}
+  }
+
+  function readStoredOpacity(){
+    try {
+      const raw = localStorage.getItem(OPACITY_KEY);
+      const num = Number(raw);
+      if (isFinite(num) && num >= 0 && num <= 1) return num;
+    } catch(_) {}
+    return DEFAULT_OPACITY;
+  }
+
+  function storeOpacity(value){
+    try { localStorage.setItem(OPACITY_KEY, String(value)); } catch(_) {}
+  }
+
+  function getBaseUrl(mode){
+    const entry = TILE_MODES[mode] || TILE_MODES[DEFAULT_MODE];
+    return entry.base.replace(/\/$/, '');
+  }
+
+  function resolveHistoricUrl(){
+    return getBaseUrl(tileMode) + '/' + HISTORIC_SEGMENT;
+  }
+
+  function extractTileSuffix(url){
+    if (typeof url !== 'string' || !url.length) return null;
+    const match = url.match(/(?:reelscreens\/tiles|tiles)\/(.+)/i);
+    return match ? match[1] : null;
+  }
+
+  function retargetTileLayers(baseUrl){
+    if (!mapRef || !mapRef._layers) return;
+    const cleanBase = baseUrl.replace(/\/$/, '');
+    Object.keys(mapRef._layers).forEach(function(key){
+      const layer = mapRef._layers[key];
+      if (!layer || layer === historicLayer || typeof layer.setUrl !== 'function') return;
+      const current = layer._url;
+      const suffix = extractTileSuffix(current);
+      if (!suffix) return;
+      const nextUrl = cleanBase + '/' + suffix.replace(/^\/+/, '');
+      if (current !== nextUrl){
+        try { layer.setUrl(nextUrl); }
+        catch(e){ console.warn('[R2R] Tile layer retarget failed', e); }
+      }
+    });
+  }
+
+  function isLeafletMap(obj){
+    return !!(obj && typeof obj.addLayer === 'function' && typeof obj.removeLayer === 'function'
+      && typeof obj.getZoom === 'function' && obj._panes && obj._layers);
+  }
+
+  function sniffMapFromWindow(){
+    const directNames = ['map','Map','leafletMap','leafletmap','reelMap','r2rMap','__map','__leafletMap'];
+    for (const name of directNames){
+      try {
+        const candidate = window[name];
+        if (isLeafletMap(candidate)) return candidate;
+      } catch(_) {}
+    }
+    try {
+      const names = Object.getOwnPropertyNames(window);
+      for (const name of names){
+        if (!/map/i.test(name)) continue;
+        let candidate;
+        try { candidate = window[name]; }
+        catch(_) { continue; }
+        if (isLeafletMap(candidate)) return candidate;
+      }
+    } catch(_) {}
+    return null;
+  }
+
+  function registerMap(map){
+    if (!map || mapRef) return;
+    mapRef = map;
+    ensureControl();
+    ensureHistoricLayer();
+    retargetTileLayers(getBaseUrl(tileMode));
+  }
+
+  function ensureHistoricLayer(){
+    if (!mapRef || !window.L || typeof L.tileLayer !== 'function') return;
+    const opacity = readStoredOpacity();
+    if (historicLayer && mapRef.hasLayer && mapRef.hasLayer(historicLayer)){
+      try { mapRef.removeLayer(historicLayer); } catch(_) {}
+    }
+    historicLayer = L.tileLayer(resolveHistoricUrl(), {
+      maxZoom: 20,
+      minZoom: 8,
+      opacity: opacity,
+      tms: false,
+      crossOrigin: true,
+      attribution: 'Cleveland 1927–1937 Historical Map'
+    });
+    try { historicLayer.addTo(mapRef); } catch(_) {}
+    applyOpacity(opacity, { persist: false });
+  }
+
+  function applyOpacity(value, opts){
+    const clamped = Math.max(0, Math.min(1, Number(value) || 0));
+    if (!opts || opts.persist !== false) storeOpacity(clamped);
+    if (historicLayer && typeof historicLayer.setOpacity === 'function'){
+      try { historicLayer.setOpacity(clamped); } catch(_) {}
+    }
+    if (sliderEl && Math.round(clamped * 100) !== Number(sliderEl.value)){
+      sliderEl.value = String(Math.round(clamped * 100));
+    }
+    if (sliderValueEl){
+      sliderValueEl.textContent = Math.round(clamped * 100) + '%';
+    }
+    return clamped;
+  }
+
+  function handleModeChange(nextMode){
+    if (!TILE_MODES[nextMode]) return;
+    tileMode = nextMode;
+    storeMode(nextMode);
+    Object.keys(modeInputs).forEach(function(key){
+      if (modeInputs[key]) modeInputs[key].checked = (key === nextMode);
+    });
+    ensureHistoricLayer();
+    retargetTileLayers(getBaseUrl(nextMode));
+    try {
+      window.dispatchEvent(new CustomEvent('r2r:tile-mode-change', {
+        detail: { mode: nextMode, baseUrl: getBaseUrl(nextMode) }
+      }));
+    } catch(_) {}
+  }
+
+  function buildControlContents(container){
+    const header = document.createElement('h3');
+    header.textContent = 'Tile Source';
+    container.appendChild(header);
+
+    const modeWrap = document.createElement('div');
+    modeWrap.className = 'r2r-tile-modes';
+    container.appendChild(modeWrap);
+
+    modeInputs = {};
+    Object.keys(TILE_MODES).forEach(function(key){
+      const info = TILE_MODES[key];
+      const label = document.createElement('label');
+      label.className = 'r2r-tile-option';
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'r2r-tile-mode';
+      input.value = key;
+      input.checked = (key === tileMode);
+      input.addEventListener('change', function(ev){
+        if (ev.target && ev.target.checked) handleModeChange(key);
+      });
+
+      const text = document.createElement('span');
+      text.textContent = info.label;
+
+      label.appendChild(input);
+      label.appendChild(text);
+      modeWrap.appendChild(label);
+      modeInputs[key] = input;
+    });
+
+    const histHeading = document.createElement('div');
+    histHeading.className = 'r2r-historic-heading';
+    histHeading.textContent = 'Cleveland 1927–1937';
+    container.appendChild(histHeading);
+
+    const sliderRow = document.createElement('div');
+    sliderRow.className = 'r2r-historic-slider';
+    container.appendChild(sliderRow);
+
+    sliderEl = document.createElement('input');
+    sliderEl.type = 'range';
+    sliderEl.min = '0';
+    sliderEl.max = '100';
+    sliderEl.step = '1';
+    sliderEl.value = String(Math.round(readStoredOpacity() * 100));
+    sliderEl.addEventListener('input', function(ev){
+      applyOpacity(Number(ev.target.value) / 100, { persist: false });
+    });
+    sliderEl.addEventListener('change', function(ev){
+      applyOpacity(Number(ev.target.value) / 100);
+    });
+    ['pointerdown','pointermove','mousedown','touchstart','touchmove','dblclick'].forEach(function(evt){
+      sliderEl.addEventListener(evt, function(ev){ ev.stopPropagation(); });
+    });
+    sliderRow.appendChild(sliderEl);
+
+    sliderValueEl = document.createElement('span');
+    sliderValueEl.className = 'r2r-historic-value';
+    sliderRow.appendChild(sliderValueEl);
+    sliderRow.addEventListener('wheel', function(ev){ ev.stopPropagation(); }, { passive: true });
+    applyOpacity(readStoredOpacity(), { persist: false });
+  }
+
+  function ensureControl(){
+    if (!mapRef || !window.L || typeof L.control !== 'function' || controlBuilt) return;
+    try {
+      const control = L.control({ position: 'topright' });
+      control.onAdd = function(){
+        const container = L.DomUtil.create('div', 'r2r-tile-control leaflet-bar');
+        try {
+          if (L.DomEvent && L.DomEvent.disableClickPropagation){
+            L.DomEvent.disableClickPropagation(container);
+            L.DomEvent.disableScrollPropagation(container);
+          }
+        } catch(_) {}
+        buildControlContents(container);
+        return container;
+      };
+      control.addTo(mapRef);
+      controlBuilt = true;
+    } catch(e){
+      console.warn('[R2R] Tile control init failed', e);
+    }
+  }
+
+  function waitForMap(attempt){
+    if (mapRef) return;
+    if (!window.L || !L.Map){
+      if ((attempt || 0) < 40){
+        setTimeout(function(){ waitForMap((attempt || 0) + 1); }, 250);
+      }
+      return;
+    }
+
+    if (!hookArmed && typeof L.Map.addInitHook === 'function'){
+      hookArmed = true;
+      L.Map.addInitHook(function(){ registerMap(this); });
+    }
+
+    const existing = sniffMapFromWindow();
+    if (existing){
+      registerMap(existing);
+      return;
+    }
+
+    if ((attempt || 0) < 40){
+      setTimeout(function(){ waitForMap((attempt || 0) + 1); }, 300);
+    } else {
+      console.warn('[R2R] Leaflet map not detected for tile toggle.');
+    }
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', function(){ waitForMap(0); });
+  } else {
+    waitForMap(0);
+  }
 })();
 </script>
