@@ -8978,7 +8978,9 @@ window.__openCredits = function(orderTitles){
       if (logo) card.dataset.logo = logo;
 
       var payload = { title: title, asset: asset, item: item };
-      var activate = function(){ openRGPlayer(payload); };
+      var activate = (function(p){
+        return function(){ openRGPlayer(p); };
+      })(payload);
 
       card.addEventListener('click', function(ev){
         ev.preventDefault();
