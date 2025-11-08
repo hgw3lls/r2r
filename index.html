@@ -8416,12 +8416,22 @@ window.__openCredits = function(orderTitles){
         + '@media (max-width:460px){#rg-grid{grid-template-columns:repeat(2,1fr)}}'
         + '.rg-card{position:relative;background:#111;border:1px solid #ffffff22;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.55);transform:translateY(8px);opacity:0;animation:rgIn .5s ease forwards}'
         + '@keyframes rgIn{to{opacity:1;transform:none}}'
-        + '.rg-thumb{width:100%;height:0;padding-top:66.666%;background:#222 center/cover no-repeat;display:grid;place-items:center;color:#aaa;font-size:12px}'
+        + '.rg-thumb{position:relative;width:100%;height:0;padding-top:66.666%;background:#222 center/cover no-repeat;display:grid;place-items:center;color:#aaa;font-size:12px;overflow:hidden}'
         + '.rg-logo{position:absolute;inset:8px 8px auto 8px;height:28px;max-width:calc(100% - 16px);object-fit:contain;mix-blend-mode:screen;filter:drop-shadow(0 2px 6px rgba(0,0,0,.6));pointer-events:none}'
         + '.rg-meta{display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px;color:#fff;font-size:12px}'
         + '.rg-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.95}'
         + '.rg-chip{align-self:start;padding:3px 8px;border-radius:999px;font-weight:700;letter-spacing:.02em;border:1px solid #0000}'
         + '.rg-chip.ok{background:#19c37d;color:#071e11}.rg-chip.bad{background:#ff4b4b;color:#2b0508}'
+        + '.rg-chip.award{background:linear-gradient(135deg,#ffd97a,#f7b733);color:#3a2300;box-shadow:0 8px 24px rgba(0,0,0,.35);border:1px solid rgba(255,192,76,.7)}'
+        + '.rg-card.has-video{cursor:pointer}'
+        + '.rg-card.has-video:focus-visible{outline:3px solid rgba(255,255,255,.8);outline-offset:4px}'
+        + '.rg-card.has-video .rg-thumb::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(0,0,0,.45),rgba(0,0,0,.1));opacity:0;transition:opacity .25s ease}'
+        + '.rg-card.has-video:hover .rg-thumb::after,.rg-card.has-video:focus-visible .rg-thumb::after{opacity:1}'
+        + '.rg-reel-icon{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .25s ease}'
+        + '.rg-card.has-video:hover .rg-reel-icon,.rg-card.has-video:focus-visible .rg-reel-icon{opacity:1}'
+        + '.rg-reel-icon svg{width:42%;max-width:72px;height:auto;filter:drop-shadow(0 6px 18px rgba(0,0,0,.55))}'
+        + '.rg-card[data-award="1"]{border-color:rgba(255,215,128,.7);box-shadow:0 18px 44px rgba(0,0,0,.6)}'
+        + '.rg-card[data-award="1"] .rg-title{font-weight:700;letter-spacing:.03em}'
         + '#rg-footer{display:flex;gap:10px;justify-content:center;padding-top:6px}'
         + '#rg-footer .navbtn,#rg-footer button{background:#1a1a1a;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer;box-shadow:0 12px 36px rgba(0,0,0,.55)}';
         // + '#rg-close{position:absolute;top:10px;right:10px;background:#00000088;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:8px 10px;font-size:12px;cursor:pointer}';
@@ -8619,6 +8629,94 @@ window.__openCredits = function(orderTitles){
     if (!answers.length && typeof window.score === 'number') correct = window.score;
     sub.textContent = 'Score: ' + correct + ' / ' + total;
 
+    function buildAwardClip(score, totalQuestions){
+      if (typeof score !== 'number' || typeof totalQuestions !== 'number') return null;
+      var threshold = Math.max(4, Math.ceil(totalQuestions * 0.6));
+      var isDirector = score >= threshold;
+      var poster = isDirector ? 'images/director_ani.png' : 'images/popcorn_ani.png';
+      var video = isDirector ? 'videos/director_ani.mp4' : 'videos/popcorn_ani.mp4';
+      return {
+        title: isDirector ? "Director's Chair Bonus Reel" : 'Popcorn Break Reel',
+        video: video,
+        logo: null,
+        poster: poster,
+        chipText: isDirector ? "Director's Cut" : 'Snack Time',
+        chipClass: 'award',
+        isAward: true,
+        ariaLabel: isDirector ? 'Play the director bonus reel' : 'Play the popcorn bonus reel'
+      };
+    }
+
+    function renderClipCard(model, idx){
+      var card = document.createElement('div');
+      card.className = 'rg-card';
+      card.style.animationDelay = 'calc(' + idx + ' * 80ms)';
+      if (model.video){ card.classList.add('has-video'); }
+      if (model.isAward){ card.setAttribute('data-award', '1'); }
+
+      var thumb = document.createElement('div');
+      thumb.className = 'rg-thumb';
+      if (model.poster){
+        thumb.style.backgroundImage = 'url(' + model.poster + ')';
+      } else {
+        thumb.textContent = 'No image';
+      }
+
+      if (model.video){
+        var reel = document.createElement('div');
+        reel.className = 'rg-reel-icon';
+        reel.innerHTML = '<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><defs><linearGradient id="rgReelGrad" x1="0%" x2="100%" y1="0%" y2="100%"><stop offset="0%" stop-color="#ffe8a6"/><stop offset="100%" stop-color="#f4b942"/></linearGradient></defs><g fill="none" stroke="url(#rgReelGrad)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><circle cx="40" cy="40" r="26"/><circle cx="80" cy="80" r="26"/><path d="M54 40 L96 40"/><path d="M40 54 L40 96"/><polygon fill="url(#rgReelGrad)" points="62,60 94,74 62,88"/></g></svg>';
+        thumb.appendChild(reel);
+      }
+
+      card.appendChild(thumb);
+
+      if (model.logo){
+        var lg = document.createElement('img');
+        lg.className = 'rg-logo';
+        lg.alt = 'Logo';
+        lg.src = model.logo;
+        card.appendChild(lg);
+      }
+
+      var meta = document.createElement('div');
+      meta.className = 'rg-meta';
+      var t = document.createElement('div');
+      t.className = 'rg-title';
+      var displayIndex = (typeof model.index === 'number' && !isNaN(model.index)) ? model.index : idx;
+      t.textContent = model.title || ('Question ' + (displayIndex + 1));
+      meta.appendChild(t);
+      var chip = document.createElement('div');
+      chip.className = 'rg-chip';
+      var chipClass = model.chipClass || (model.correct ? 'ok' : 'bad');
+      if (chipClass){ chip.classList.add(chipClass); }
+      chip.textContent = model.chipText || (model.correct ? 'Correct' : 'Wrong');
+      meta.appendChild(chip);
+      card.appendChild(meta);
+
+      if (model.video){
+        var idxStr = String(idx);
+        card.dataset.rgClip = idxStr;
+        card.setAttribute('role', 'button');
+        card.tabIndex = 0;
+        card.setAttribute('aria-label', model.ariaLabel || ('Play clip for ' + (model.title || ('item ' + (idx + 1)))));
+        card.addEventListener('click', function(ev){
+          if (ev){ ev.preventDefault(); ev.stopPropagation(); }
+          openReviewClip(idx);
+        });
+        card.addEventListener('keydown', function(ev){
+          if (!ev) return;
+          if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar'){
+            ev.preventDefault();
+            ev.stopPropagation();
+            openReviewClip(idx);
+          }
+        });
+      }
+
+      return card;
+    }
+
     grid.innerHTML = '';
     for (var i=0; i<order.length; i++){
       var title = order[i];
@@ -8629,48 +8727,38 @@ window.__openCredits = function(orderTitles){
       var bg   = asset && asset.image || null;
       var ok = !!(answers && answers[i]);
 
-      var card = document.createElement('div'); card.className = 'rg-card'; card.style.animationDelay = 'calc(' + i + ' * 80ms)';
-      var thumb = document.createElement('div'); thumb.className = 'rg-thumb';
-      if (bg) thumb.style.backgroundImage = 'url(' + bg + ')'; else thumb.textContent = 'No image';
-      var meta = document.createElement('div'); meta.className = 'rg-meta';
-      var t = document.createElement('div'); t.className = 'rg-title'; t.textContent = title || ('Question ' + (i+1));
-      var chip = document.createElement('div'); chip.className = 'rg-chip ' + (ok?'ok':'bad'); chip.textContent = ok ? 'Correct' : 'Wrong';
-      meta.appendChild(t); meta.appendChild(chip);
-      card.appendChild(thumb);
-      if (logo){ var lg = document.createElement('img'); lg.className = 'rg-logo'; lg.alt='Logo'; lg.src = logo; card.appendChild(lg); }
-      card.appendChild(meta); grid.appendChild(card);
-
-      var clip = {
+      clipData.push({
         title: title,
         video: asset && asset.video || null,
         logo: logo || null,
         poster: bg || null,
-        index: i
-      };
-      clipData.push(clip);
-
-      if (clip.video){
-        (function(idx){
-          card.dataset.rgClip = String(idx);
-          card.setAttribute('role', 'button');
-          card.tabIndex = 0;
-          card.addEventListener('click', function(ev){
-            if (ev){ ev.preventDefault(); ev.stopPropagation(); }
-            openReviewClip(idx);
-          });
-          card.addEventListener('keydown', function(ev){
-            if (!ev) return;
-            if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar'){
-              ev.preventDefault();
-              ev.stopPropagation();
-              openReviewClip(idx);
-            }
-          });
-        })(clipData.length - 1);
-      }
+        index: i,
+        correct: ok,
+        chipText: ok ? 'Correct' : 'Wrong',
+        chipClass: ok ? 'ok' : 'bad'
+      });
     }
 
-    setReviewClips(clipData);
+    var awardClip = buildAwardClip(correct, total);
+    if (awardClip){
+      var insertAt = clipData.length ? Math.min(clipData.length, Math.max(1, Math.floor(clipData.length / 2))) : 0;
+      clipData.splice(insertAt, 0, awardClip);
+    }
+
+    var playbackClips = clipData.map(function(model){
+      return {
+        title: model.title,
+        video: model.video,
+        logo: model.logo || null,
+        poster: model.poster || null
+      };
+    });
+
+    setReviewClips(playbackClips);
+
+    clipData.forEach(function(model, idx){
+      grid.appendChild(renderClipCard(model, idx));
+    });
 
     document.getElementById('rg-overlay').style.display = 'block';
     console.log('[2M] review grid shown with', (order||[]).length, 'items');
