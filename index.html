@@ -5375,6 +5375,40 @@ button.exit.pill {
     font-variant-numeric: tabular-nums;
     font-size: 0.78rem;
   }
+  .r2r-tile-control .r2r-tile-actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .r2r-tile-control .r2r-restart-btn {
+    font: inherit;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid #f5d75c;
+    background: rgba(245, 215, 92, 0.1);
+    color: #f5d75c;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .r2r-tile-control .r2r-restart-btn:hover,
+  .r2r-tile-control .r2r-restart-btn:focus-visible {
+    background: rgba(245, 215, 92, 0.28);
+    color: #1a1a1a;
+    outline: none;
+  }
+  .r2r-tile-control-fallback {
+    position: fixed;
+    top: 96px;
+    right: 16px;
+    z-index: 5000;
+    pointer-events: none;
+  }
+  .r2r-tile-control--floating {
+    box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55);
+    pointer-events: auto;
+  }
 </style>
 
 <!-- R2R PATCH: playback & layout tuning -->
@@ -9714,6 +9748,8 @@ window.__openCredits = function(orderTitles){
   let modeInputs = {};
   let sliderEl = null;
   let sliderValueEl = null;
+  let controlEl = null;
+  let fallbackWrapper = null;
   let controlBuilt = false;
   let hookArmed = false;
 
@@ -9797,12 +9833,36 @@ window.__openCredits = function(orderTitles){
         if (isLeafletMap(candidate)) return candidate;
       }
     } catch(_) {}
+    try {
+      const names = Object.getOwnPropertyNames(window);
+      let inspected = 0;
+      for (const name of names){
+        let host;
+        try { host = window[name]; }
+        catch(_) { continue; }
+        if (isLeafletMap(host)) return host;
+        if (!host || typeof host !== 'object') continue;
+        inspected += 1;
+        if (inspected > 200) break;
+        let innerKeys;
+        try { innerKeys = Object.keys(host); }
+        catch(_) { continue; }
+        for (const innerKey of innerKeys){
+          if (!/map/i.test(innerKey)) continue;
+          let inner;
+          try { inner = host[innerKey]; }
+          catch(_) { continue; }
+          if (isLeafletMap(inner)) return inner;
+        }
+      }
+    } catch(_) {}
     return null;
   }
 
   function registerMap(map){
     if (!map || mapRef) return;
     mapRef = map;
+    tearDownFallback();
     ensureControl();
     ensureHistoricLayer();
     retargetTileLayers(getBaseUrl(tileMode));
@@ -9857,14 +9917,19 @@ window.__openCredits = function(orderTitles){
     } catch(_) {}
   }
 
-  function buildControlContents(container){
+  function buildControlElement(){
+    if (controlEl) return controlEl;
+
+    controlEl = document.createElement('div');
+    controlEl.className = 'r2r-tile-control';
+
     const header = document.createElement('h3');
     header.textContent = 'Tile Source';
-    container.appendChild(header);
+    controlEl.appendChild(header);
 
     const modeWrap = document.createElement('div');
     modeWrap.className = 'r2r-tile-modes';
-    container.appendChild(modeWrap);
+    controlEl.appendChild(modeWrap);
 
     modeInputs = {};
     Object.keys(TILE_MODES).forEach(function(key){
@@ -9893,11 +9958,11 @@ window.__openCredits = function(orderTitles){
     const histHeading = document.createElement('div');
     histHeading.className = 'r2r-historic-heading';
     histHeading.textContent = 'Cleveland 1927–1937';
-    container.appendChild(histHeading);
+    controlEl.appendChild(histHeading);
 
     const sliderRow = document.createElement('div');
     sliderRow.className = 'r2r-historic-slider';
-    container.appendChild(sliderRow);
+    controlEl.appendChild(sliderRow);
 
     sliderEl = document.createElement('input');
     sliderEl.type = 'range';
@@ -9920,7 +9985,75 @@ window.__openCredits = function(orderTitles){
     sliderValueEl.className = 'r2r-historic-value';
     sliderRow.appendChild(sliderValueEl);
     sliderRow.addEventListener('wheel', function(ev){ ev.stopPropagation(); }, { passive: true });
+
+    const actions = document.createElement('div');
+    actions.className = 'r2r-tile-actions';
+    const restartBtn = document.createElement('button');
+    restartBtn.type = 'button';
+    restartBtn.className = 'r2r-restart-btn';
+    restartBtn.textContent = 'Restart';
+    restartBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      try {
+        window.dispatchEvent(new CustomEvent('r2r:restart-requested'));
+      } catch(_) {}
+      try { sessionStorage.clear(); } catch(_) {}
+      try {
+        localStorage.removeItem(MODE_KEY);
+        localStorage.removeItem(OPACITY_KEY);
+      } catch(_) {}
+      window.location.reload();
+    });
+    ['pointerdown','mousedown','touchstart','touchend'].forEach(function(evt){
+      restartBtn.addEventListener(evt, function(ev){ ev.stopPropagation(); });
+    });
+    actions.appendChild(restartBtn);
+    controlEl.appendChild(actions);
+
     applyOpacity(readStoredOpacity(), { persist: false });
+
+    return controlEl;
+  }
+
+  function ensureFallbackMount(){
+    if (mapRef || controlBuilt || fallbackWrapper || !document.body) return;
+    const container = buildControlElement();
+    container.classList.add('r2r-tile-control--floating');
+    fallbackWrapper = document.createElement('div');
+    fallbackWrapper.className = 'r2r-tile-control-fallback';
+    fallbackWrapper.appendChild(container);
+    document.body.appendChild(fallbackWrapper);
+  }
+
+  function tearDownFallback(){
+    if (!fallbackWrapper) return;
+    const container = buildControlElement();
+    try {
+      if (fallbackWrapper.contains(container)) {
+        fallbackWrapper.removeChild(container);
+      }
+      if (fallbackWrapper.parentNode) {
+        fallbackWrapper.parentNode.removeChild(fallbackWrapper);
+      }
+    } catch(_) {}
+    fallbackWrapper = null;
+    container.classList.remove('r2r-tile-control--floating');
+  }
+
+  function patchLeafletFactory(){
+    if (!window.L || !L.map || L.map.__r2rPatched) return;
+    const original = L.map;
+    function wrappedMap(){
+      const map = original.apply(this, arguments);
+      try { registerMap(map); } catch(_) {}
+      return map;
+    }
+    wrappedMap.prototype = original.prototype;
+    Object.setPrototypeOf(wrappedMap, original);
+    Object.assign(wrappedMap, original);
+    wrappedMap.__r2rPatched = true;
+    L.map = wrappedMap;
   }
 
   function ensureControl(){
@@ -9928,15 +10061,19 @@ window.__openCredits = function(orderTitles){
     try {
       const control = L.control({ position: 'topright' });
       control.onAdd = function(){
-        const container = L.DomUtil.create('div', 'r2r-tile-control leaflet-bar');
+        const outer = L.DomUtil.create('div', 'leaflet-bar');
+        outer.classList.add('r2r-tile-shell');
         try {
           if (L.DomEvent && L.DomEvent.disableClickPropagation){
-            L.DomEvent.disableClickPropagation(container);
-            L.DomEvent.disableScrollPropagation(container);
+            L.DomEvent.disableClickPropagation(outer);
+            L.DomEvent.disableScrollPropagation(outer);
           }
         } catch(_) {}
-        buildControlContents(container);
-        return container;
+        const container = buildControlElement();
+        tearDownFallback();
+        container.classList.remove('r2r-tile-control--floating');
+        outer.appendChild(container);
+        return outer;
       };
       control.addTo(mapRef);
       controlBuilt = true;
@@ -9946,10 +10083,18 @@ window.__openCredits = function(orderTitles){
   }
 
   function waitForMap(attempt){
+    const tries = attempt || 0;
+    if (!mapRef && tries >= 3) ensureFallbackMount();
+
     if (mapRef) return;
+
+    if (window.L && L.Map) {
+      patchLeafletFactory();
+    }
+
     if (!window.L || !L.Map){
-      if ((attempt || 0) < 40){
-        setTimeout(function(){ waitForMap((attempt || 0) + 1); }, 250);
+      if (tries < 200){
+        setTimeout(function(){ waitForMap(tries + 1); }, 250);
       }
       return;
     }
@@ -9965,8 +10110,8 @@ window.__openCredits = function(orderTitles){
       return;
     }
 
-    if ((attempt || 0) < 40){
-      setTimeout(function(){ waitForMap((attempt || 0) + 1); }, 300);
+    if (tries < 200){
+      setTimeout(function(){ waitForMap(tries + 1); }, 300);
     } else {
       console.warn('[R2R] Leaflet map not detected for tile toggle.');
     }
