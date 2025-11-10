@@ -8444,8 +8444,11 @@ window.__openCredits = function(orderTitles){
         '#rg-thumb-track::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:999px;}',
         '.rg-thumb-item{position:relative;flex:0 0 auto;width:160px;display:flex;flex-direction:column;gap:6px;scroll-snap-align:start;}',
         '.rg-thumb-item.archetype{position:sticky;left:0;z-index:4;margin-right:0;}',
-        '.rg-thumb-item.archetype::before{content:"";position:absolute;inset:-32px -160px -32px -160px;z-index:-1;background:rgba(0,0,0,.92);border-radius:40px;box-shadow:0 32px 76px rgba(0,0,0,.72);pointer-events:none;}',
+        '.rg-thumb-item.archetype::before{content:"";position:absolute;top:-32px;bottom:-32px;left:-160px;right:0;z-index:-1;background:rgba(0,0,0,.92);border-radius:40px;box-shadow:0 32px 76px rgba(0,0,0,.72);pointer-events:none;}',
         '.rg-thumb-item.archetype .rg-thumb-btn{background:#101010;box-shadow:none;}',
+        '.rg-thumb-item.filler{pointer-events:none;}',
+        '.rg-thumb-item.filler .rg-thumb-btn{cursor:default;background:#000;box-shadow:none;border:1px solid rgba(255,255,255,.08);}',
+        '.rg-thumb-item.filler .rg-thumb-label,.rg-thumb-item.filler .rg-thumb-status{display:none;}',
         '.rg-thumb-item.first-quiz{margin-left:var(--rg-first-gap);}',
         '.rg-thumb-item.last-quiz{margin-right:var(--rg-edge-gap);}',
         '.rg-thumb-btn{position:relative;width:100%;padding-top:62%;border:none;border-radius:18px;overflow:hidden;background:rgba(20,20,20,.9);box-shadow:0 14px 32px rgba(0,0,0,.55);cursor:pointer;transition:transform .2s ease,border-color .2s ease;}',
@@ -8859,8 +8862,18 @@ window.__openCredits = function(orderTitles){
     track.scrollLeft = 0;
     updateThumbEdgeSpacing(track);
     requestAnimationFrame(function(){
-      var archetypeItem = track.querySelector('.rg-thumb-item.archetype');
       var offset = 0;
+      var leadFiller = track.querySelector('.rg-thumb-item.filler.lead');
+      if (leadFiller){
+        offset += leadFiller.offsetWidth || 0;
+        try {
+          var ts = window.getComputedStyle(track);
+          var gapVal = (ts && (ts.getPropertyValue('column-gap') || ts.getPropertyValue('gap'))) || '0';
+          var gap = parseFloat(gapVal || '0');
+          if (isFinite(gap) && gap > 0){ offset += gap; }
+        } catch(_){}
+      }
+      var archetypeItem = track.querySelector('.rg-thumb-item.archetype');
       if (archetypeItem){
         offset += archetypeItem.offsetWidth || 0;
         try {
@@ -9009,7 +9022,26 @@ window.__openCredits = function(orderTitles){
   function buildThumbs(track, clips){
     if (!track) return;
     track.innerHTML = '';
-    if (!Array.isArray(clips)) return;
+    if (!Array.isArray(clips)) clips = [];
+
+    function appendFiller(position){
+      var filler = document.createElement('div');
+      var cls = 'rg-thumb-item filler';
+      if (position){ cls += ' ' + position; }
+      filler.className = cls;
+      filler.setAttribute('role', 'presentation');
+      filler.setAttribute('aria-hidden', 'true');
+
+      var block = document.createElement('div');
+      block.className = 'rg-thumb-btn';
+      block.tabIndex = -1;
+      filler.appendChild(block);
+
+      track.appendChild(filler);
+    }
+
+    appendFiller('lead');
+
     var built = [];
     for (var i=0;i<clips.length;i++){
       var clip = clips[i] || {};
@@ -9058,6 +9090,8 @@ window.__openCredits = function(orderTitles){
       track.appendChild(item);
       built.push({ node: item, clip: clip });
     }
+
+    appendFiller('trail');
 
     var firstQuiz = null;
     for (var a=0;a<built.length;a++){
