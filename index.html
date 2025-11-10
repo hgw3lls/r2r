@@ -5656,6 +5656,7 @@ const DIDYOUKNOWS = {"Kid From Cleveland": "First film with athletes playing the
 
   // === added: exact play order with correctness ===
   window.__QUIZ_LAST_ORDER = [];
+  window.__QUIZ_ACTIVE_PROMPT = '';
 
 
   const quizBox        = document.querySelector(".quiz-box");
@@ -5764,7 +5765,7 @@ showScore(quiz.correctAnswers, quiz.length);
     }
   }
 
-  function renderCurrent() {try{ if (!Array.isArray(window.__QUIZ_LAST_ORDER)) window.__QUIZ_LAST_ORDER=[]; if (quiz && quiz.questionIndex===0) window.__QUIZ_LAST_ORDER.length=0; }catch(e){}
+  function renderCurrent() {try{ if (!Array.isArray(window.__QUIZ_LAST_ORDER)) window.__QUIZ_LAST_ORDER=[]; if (quiz && quiz.questionIndex===0) window.__QUIZ_LAST_ORDER.length=0; window.__QUIZ_ACTIVE_PROMPT=''; }catch(e){}
 
     // Restore quiz visuals when showing a question
     if (badgeEl) badgeEl.style.display = '';
@@ -5779,6 +5780,14 @@ if (typeof holdTapCleanup === 'function') { try { holdTapCleanup(); } catch(_) {
     overlay.classList.remove('show');
 
     const q = quiz.callQuestion(); if (!q) return;
+    try {
+      var prompt = '';
+      if (q && typeof q.questionText === 'string') { prompt = q.questionText; }
+      else if (q && typeof q.question === 'string') { prompt = q.question; }
+      window.__QUIZ_ACTIVE_PROMPT = prompt || '';
+    } catch (_) {
+      try { window.__QUIZ_ACTIVE_PROMPT = ''; } catch (__) {}
+    }
     try { window.__currentShort = (q && q.meta && q.meta.title && SHORTS[q.meta.title]) ? SHORTS[q.meta.title] : '';
     try { window.__currentTitle = (q && q.meta && q.meta.title) ? q.meta.title : ''; } catch(_) { window.__currentTitle=''; }
   } catch(_) { window.__currentShort=''; }
@@ -5815,16 +5824,29 @@ if (typeof holdTapCleanup === 'function') { try { holdTapCleanup(); } catch(_) {
     clearIntervalSafe();
     const q = quiz.callQuestion();
     const pickedKey = optionEl.getAttribute("data-key");
+    var qText = '';
+    try {
+      if (q && typeof q.questionText === 'string') { qText = q.questionText; }
+      else if (q && typeof q.question === 'string') { qText = q.question; }
+      else if (typeof window.__QUIZ_ACTIVE_PROMPT === 'string') { qText = window.__QUIZ_ACTIVE_PROMPT; }
+    } catch (_) {}
     if (q.checkAnswer(pickedKey)) {
-      
-      try { if (!Array.isArray(window.__answerLog)) window.__answerLog = []; window.__answerLog.push(true); } catch(e) {}
-try { window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: true }); } catch(e) {}
-optionEl.classList.add("correct"); optionEl.insertAdjacentHTML("beforeend", correctIcon);
+      try {
+        if (!Array.isArray(window.__answerLog)) window.__answerLog = [];
+        window.__answerLog.push(true);
+      } catch(e) {}
+      try {
+        window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: true, question: qText });
+      } catch(e) {}
+      optionEl.classList.add("correct"); optionEl.insertAdjacentHTML("beforeend", correctIcon);
       quiz.correctAnswers++;
       showResultOverlay('correct');
     } else {
-      optionEl.classList.add("incorrect"); try { window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: false }); } catch(e) {}
-optionEl.insertAdjacentHTML("beforeend", incorrectIcon);
+      optionEl.classList.add("incorrect");
+      try {
+        window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: false, question: qText });
+      } catch(e) {}
+      optionEl.insertAdjacentHTML("beforeend", incorrectIcon);
       showResultOverlay('wrong');
     }
     revealCorrectAndLock(q);
@@ -5989,7 +6011,16 @@ function showScore(correct, total){
       timeLeft -= 1;
       secondEl.textContent = Math.max(0, timeLeft);
       if (timeLeft < 0){
-        try { var __qTimeout = quiz && typeof quiz.callQuestion==='function' ? quiz.callQuestion() : null; if (__qTimeout) { window.__QUIZ_LAST_ORDER.push({ title: (__qTimeout.meta && __qTimeout.meta.title) || '', correct: false }); } } catch(e) {}
+        try {
+          var __qTimeout = quiz && typeof quiz.callQuestion==='function' ? quiz.callQuestion() : null;
+          var __qPrompt = '';
+          if (__qTimeout && typeof __qTimeout.questionText === 'string') { __qPrompt = __qTimeout.questionText; }
+          else if (__qTimeout && typeof __qTimeout.question === 'string') { __qPrompt = __qTimeout.question; }
+          else if (typeof window.__QUIZ_ACTIVE_PROMPT === 'string') { __qPrompt = window.__QUIZ_ACTIVE_PROMPT; }
+          if (__qTimeout) {
+            window.__QUIZ_LAST_ORDER.push({ title: (__qTimeout.meta && __qTimeout.meta.title) || '', correct: false, question: __qPrompt });
+          }
+        } catch(e) {}
 clearIntervalSafe();
         try { if (!Array.isArray(window.__answerLog)) window.__answerLog = []; window.__answerLog.push(false); } catch(e) {}
         timeTextEl.textContent = "Time Over";
@@ -8899,7 +8930,7 @@ window.__openCredits = function(orderTitles){
     var question = '';
     var infoItems = [];
     if (item && typeof item === 'object'){
-      question = item.question || item.prompt || item.text || item.heading || item.title || item.name || '';
+      question = item.question || item.questionText || item.prompt || item.text || item.heading || item.title || item.name || '';
       var infoFields = ['info','details','explanation','factoids','facts','bullets','summary','description','extra','body','notes','context'];
       var pushText = function(val){
         if (typeof val === 'string'){ infoItems.push(val); return; }
@@ -8915,6 +8946,11 @@ window.__openCredits = function(orderTitles){
           pushText(value);
         }
       }
+    }
+    if (typeof question === 'string'){
+      question = question.trim();
+    } else {
+      question = '';
     }
     if (!question) question = fallbackTitle || '';
     return { question: question, info: infoItems.filter(function(v){ return typeof v === 'string' && v.trim().length; }), correct: !!ok };
@@ -9761,7 +9797,11 @@ window.__openCredits = function(orderTitles){
       }
 
       var info = buildClipInfo(item, title, ok);
-      clip.question = info.question;
+      clip.question = (info && info.question) || '';
+      if (!clip.question && item && typeof item.questionText === 'string'){ clip.question = item.questionText; }
+      else if (!clip.question && item && typeof item.question === 'string'){ clip.question = item.question; }
+      if (typeof clip.question === 'string'){ clip.question = clip.question.trim(); }
+      else { clip.question = ''; }
 
       var locationName = '';
       if (meta && meta.location && typeof meta.location.name === 'string'){
@@ -9771,7 +9811,7 @@ window.__openCredits = function(orderTitles){
       var details = {
         filmTitle: (meta && meta.title) || title,
         location: locationName,
-        question: info.question || title,
+        question: clip.question || title,
         answer: ok ? 'Correct' : 'Incorrect',
         correct: ok,
         main: (meta && meta.main) || '',
