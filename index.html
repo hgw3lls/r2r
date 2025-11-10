@@ -8522,7 +8522,7 @@ window.__openCredits = function(orderTitles){
         '#rg-info-panel .rg-info-controls button:hover{background:rgba(255,255,255,.18);}',
         '#rg-info-panel .rg-info-controls button.secondary{background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.25);}',
         '#rg-info-panel .rg-info-controls button.secondary:hover{background:rgba(0,0,0,.65);}',
-        '#rg-info-panel .rg-info-head{display:flex;align-items:center;gap:14px;margin-bottom:16px;}',
+        '#rg-info-panel .rg-info-head{display:block;margin-bottom:16px;padding:0 10px;text-align:center;}',
         '#rg-info-panel .rg-info-field{margin-bottom:16px;}',
         '#rg-info-panel .rg-info-field:last-child{margin-bottom:0;}',
         '#rg-info-panel .rg-info-label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.6);margin-bottom:4px;}',
@@ -8531,10 +8531,11 @@ window.__openCredits = function(orderTitles){
         '#rg-info-panel .rg-info-field.answer.ok .rg-info-value{color:#19c37d;}',
         '#rg-info-panel .rg-info-field.answer.bad .rg-info-value{color:#ff6f6f;}',
         '#rg-info-panel .rg-info-field.location .rg-info-list li{margin-bottom:2px;}',
-        '#rg-info-logo{width:64px;height:64px;flex:0 0 auto;object-fit:contain;background:rgba(0,0,0,.6);border-radius:18px;border:1px solid rgba(255,255,255,.12);padding:10px;box-shadow:0 16px 36px rgba(0,0,0,.6);display:none;}',
-        '#rg-info-logo.show{display:block;}',
-        '#rg-info-title{font-size:18px;letter-spacing:.04em;text-transform:uppercase;line-height:1.3;flex:1 1 auto;}',
-        '#rg-info-title.empty{display:none;}',
+        '#rg-info-logo{width:100%;height:auto;max-height:140px;object-fit:contain;background:none;border-radius:0;border:none;padding:0;box-shadow:none;display:none;}',
+        '#rg-info-logo.show{display:block;margin:0 auto;}',
+        '#rg-info-title{display:none;}',
+        '#rg-info-panel .rg-info-location{font-size:15px;line-height:1.6;color:rgba(255,255,255,.78);margin-bottom:12px;}',
+        '#rg-info-panel .rg-info-main{font-size:15px;line-height:1.7;color:#f4f4f4;white-space:pre-wrap;word-break:break-word;}',
         '#rg-info-panel .rg-info-status{margin-bottom:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;display:inline-flex;align-items:center;gap:8px;}',
         '#rg-info-panel .rg-info-status.ok{color:#19c37d;}',
         '#rg-info-panel .rg-info-status.bad{color:#ff4b4b;}',
@@ -8914,18 +8915,19 @@ window.__openCredits = function(orderTitles){
     var hideBtn = root.querySelector('#rg-info-hide');
     if (!panel || !body) return;
 
+    var isArchetype = !!(clip && clip.kind === 'archetype');
     var question = clip && (clip.question || clip.title) || '';
     var infoTitle = panel.querySelector('#rg-info-title');
     if (infoTitle){
-      infoTitle.textContent = question || '';
-      infoTitle.classList.toggle('empty', !question);
-      infoTitle.setAttribute('aria-hidden', question ? 'false' : 'true');
+      infoTitle.textContent = '';
+      infoTitle.classList.add('empty');
+      infoTitle.setAttribute('aria-hidden', 'true');
     }
     var infoLogo = panel.querySelector('#rg-info-logo');
     if (infoLogo){
-      if (clip && clip.logo){
+      if (clip && clip.logo && !isArchetype){
         infoLogo.src = clip.logo;
-        infoLogo.alt = (clip.title || question || 'Clip') + ' logo';
+        infoLogo.alt = (clip.title || 'Clip') + ' logo';
         infoLogo.classList.add('show');
         infoLogo.setAttribute('aria-hidden', 'false');
       } else {
@@ -9001,49 +9003,39 @@ window.__openCredits = function(orderTitles){
       return true;
     }
 
-    if (clip){
-      var status = document.createElement('div');
-      var statusClass = 'rg-info-status';
-      var statusText = '';
-      if (clip.kind === 'archetype'){
-        statusClass += ' archetype';
-        statusText = 'Your archetype result';
-      } else if (typeof clip.correct === 'boolean'){
-        if (clip.correct){ statusClass += ' ok'; statusText = 'You answered correctly'; }
-        else { statusClass += ' bad'; statusText = 'You answered incorrectly'; }
-      }
-      if (statusText){
-        status.textContent = statusText;
-        status.className = statusClass;
-        body.appendChild(status);
-        appended++;
-      }
+    function appendPlain(value, className){
+      if (typeof value !== 'string') return false;
+      var text = value.trim();
+      if (!text) return false;
+      var el = document.createElement('div');
+      el.className = className || '';
+      el.textContent = text;
+      body.appendChild(el);
+      appended++;
+      appendedDetails++;
+      return true;
     }
 
     if (details){
-      if (details.filmTitle){ appendField('Title', details.filmTitle, 'title'); }
+      if (!isArchetype){
+        if (details.location){ appendPlain(details.location, 'rg-info-location'); }
 
-      if (details.location && (details.location.name || details.location.image || details.location.video)){
-        var locEntries = [];
-        if (details.location.name) locEntries.push('Name: ' + details.location.name);
-        if (details.location.image) locEntries.push('Image: ' + details.location.image);
-        if (details.location.video) locEntries.push('Video: ' + details.location.video);
-        appendField('Location', locEntries, 'location');
+        if (typeof details.answer === 'string' || typeof details.correct === 'boolean'){
+          var answerText = (typeof details.answer === 'string' && details.answer.trim()) ? details.answer : '';
+          var answerClass = 'answer';
+          if (!answerText){ answerText = details.correct ? 'Correct' : 'Incorrect'; }
+          if (details.correct === true) answerClass += ' ok';
+          else if (details.correct === false) answerClass += ' bad';
+          appendField('Answer', answerText, answerClass);
+        }
+
+        if (details.question){ appendField('Question', details.question, 'question'); }
+
+        if (details.main){ appendField('Main', details.main, 'main'); }
+        if (details.didyouknow){ appendField('Did You Know?', details.didyouknow, 'fact'); }
+      } else {
+        if (details.main){ appendPlain(details.main, 'rg-info-main'); }
       }
-
-      if (details.question){ appendField('Question', details.question, 'question'); }
-
-      if (typeof details.answer === 'string' || typeof details.correct === 'boolean'){
-        var answerText = (typeof details.answer === 'string' && details.answer.trim()) ? details.answer : '';
-        var answerClass = 'answer';
-        if (!answerText){ answerText = details.correct ? 'Correct' : 'Incorrect'; }
-        if (details.correct === true) answerClass += ' ok';
-        else if (details.correct === false) answerClass += ' bad';
-        appendField('Answer', answerText, answerClass);
-      }
-
-      if (details.main){ appendField('Main', details.main, 'main'); }
-      if (details.didyouknow){ appendField('Did You Know?', details.didyouknow, 'fact'); }
     }
 
     if (infoItems.length){
@@ -9424,56 +9416,56 @@ window.__openCredits = function(orderTitles){
         max: 0,
         key: 'ticket-taker',
         videoFile: 'ticket-taker',
-        title: 'Ticket-Taker',
-        blurb: '🎟️ 0: Ticket-Taker\nYou’ve just stepped inside the theatre. You keep the reels turning and the crowds flowing — the unsung guardian of the silver screen.'
+        title: 'The Ticket-Taker',
+        description: 'You’ve just stepped inside the theatre. You keep the reels turning and the crowds flowing — the unsung guardian of the silver screen.'
       },
       {
         min: 1,
         max: 2,
         key: 'tpopcorn',
-        videoFile: 'popcorn',
-        title: 'Popcorn Crew',
-        blurb: '🍿 1–2: Popcorn Crew\nSticky floors, buttery hands, and pure movie magic. You fuel the fantasy one scoop at a time — the aroma of every matinee is your legacy.'
+        videoFile: 'tpopcorn',
+        title: 'The Popcorn Clerk',
+        description: 'Sticky floors, buttery hands, and pure movie magic. You fuel the fantasy one scoop at a time — the aroma of every matinee is your legacy.'
       },
       {
         min: 3,
         max: 4,
         key: 'tstand-in',
-        videoFile: 'stand-in',
-        title: 'Stand-In',
-        blurb: '🎬 3–4: Stand-In\nYou’re in the frame, but just out of focus. Always ready for your cue, you make the stars shine brighter — even if no one remembers your name.'
+        videoFile: 'tstand-in',
+        title: 'The Stand-In',
+        description: 'You’re in the frame, but just out of focus. Always ready for your cue, you make the stars shine brighter — even if no one remembers your name.'
       },
       {
         min: 5,
         max: 6,
         key: 'tprops',
-        videoFile: 'props',
-        title: 'Props Department',
-        blurb: '🔧 5–6: Props Department\nYou build the worlds others dream in. Every cigarette case, every fake revolver, every flickering sign — your craft sells the illusion.'
+        videoFile: 'tprops',
+        title: 'The Prop Master',
+        description: 'You build the worlds others dream in. Every cigarette case, every fake revolver, every flickering sign — your craft sells the illusion.'
       },
       {
         min: 7,
         max: 8,
         key: 'tstar',
-        videoFile: 'star',
-        title: 'Hollywood Star',
-        blurb: '⭐ 7–8: Hollywood Star\nThe spotlight bends toward you. Lines delivered, close-ups flawless — you’re the face on the poster, the reason the crowd still believes.'
+        videoFile: 'tstar',
+        title: 'A Hollywood Star',
+        description: 'The spotlight bends toward you. Lines delivered, close-ups flawless — you’re the face on the poster, the reason the crowd still believes.'
       },
       {
         min: 9,
         max: 9,
         key: 'tdirector',
-        videoFile: 'director',
-        title: 'Director',
-        blurb: '🎥 9: Director\nYou call the shots. Angles, edits, emotion — all orbit your vision. The city itself bends to your storyboards.'
+        videoFile: 'tdirector',
+        title: 'The Director',
+        description: 'You call the shots. Angles, edits, emotion — all orbit your vision. The city itself bends to your storyboards.'
       },
       {
         min: 10,
         max: Infinity,
         key: 'tmogul',
-        videoFile: 'mogul',
-        title: 'Hollywood Mogul',
-        blurb: '💼 10: Hollywood Mogul\nYou own the backlot, the skyline, the dream factory. Every deal’s a fade-in, every fortune a final cut — and the credits always end with your name.'
+        videoFile: 'tmogul',
+        title: 'The Hollywood Mogul',
+        description: 'You own the backlot, the skyline, the dream factory. Every deal’s a fade-in, every fortune a final cut — and the credits always end with your name.'
       }
     ];
     var chosen = map[map.length - 1];
@@ -9482,27 +9474,30 @@ window.__openCredits = function(orderTitles){
       if (score >= entry.min && score <= entry.max){ chosen = entry; break; }
     }
     var imageBase = (chosen.videoFile || chosen.key || '').replace(/\s+/g,'-');
-    var blurb = chosen.blurb || '';
+    var description = chosen.description || '';
+    var scoreLine = 'You got ' + score + ' out of ' + total + ' questions.';
+    var titleLine = chosen.title ? ('You’re ' + chosen.title + '. ') : '';
+    var mainText = description ? (scoreLine + ' ' + titleLine + description) : (scoreLine + (titleLine ? ' ' + titleLine.trim() : ''));
     var clip = {
       kind: 'archetype',
       title: chosen.title,
       video: 'videos/results/' + (chosen.videoFile || chosen.key) + '.mp4',
-      logo: 'images/results/' + imageBase + '.png',
+      logo: null,
       poster: 'images/results/' + imageBase + '.png',
       thumbnail: 'images/results/' + imageBase + '.png',
       correct: true,
       score: score,
       total: total
     };
-    clip.question = 'Your archetype: ' + chosen.title;
-    clip.info = blurb ? [blurb] : ['With a score of ' + score + ' out of ' + total + ', you earned the ' + chosen.title + ' honor.'];
+    clip.question = '';
+    clip.info = mainText ? [mainText] : [];
     clip.details = {
       filmTitle: chosen.title,
-      question: clip.question,
-      answer: 'Score: ' + score + ' / ' + total,
+      question: '',
+      answer: '',
       correct: true,
-      location: null,
-      main: blurb || ('With a score of ' + score + ' out of ' + total + ', you earned the ' + chosen.title + ' honor.'),
+      location: '',
+      main: mainText,
       didyouknow: ''
     };
     return clip;
@@ -9746,19 +9741,14 @@ window.__openCredits = function(orderTitles){
       var info = buildClipInfo(item, title, ok);
       clip.question = info.question;
 
-      var location = null;
-      if (meta && meta.location){
-        location = {
-          name: meta.location.name || '',
-          image: meta.location.image || '',
-          video: meta.location.video || ''
-        };
-        if (!location.name && !location.image && !location.video){ location = null; }
+      var locationName = '';
+      if (meta && meta.location && typeof meta.location.name === 'string'){
+        locationName = meta.location.name;
       }
 
       var details = {
         filmTitle: (meta && meta.title) || title,
-        location: location,
+        location: locationName,
         question: info.question || title,
         answer: ok ? 'Correct' : 'Incorrect',
         correct: ok,
