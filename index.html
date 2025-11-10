@@ -5623,6 +5623,28 @@ const DIDYOUKNOWS = {"Kid From Cleveland": "First film with athletes playing the
   // === added: exact play order with correctness ===
   window.__QUIZ_LAST_ORDER = [];
 
+  function safeDidYouKnow(title){
+    try {
+      if (title && window.DIDYOUKNOWS && typeof window.DIDYOUKNOWS[title] === 'string'){
+        return window.DIDYOUKNOWS[title];
+      }
+    } catch(e){}
+    return '';
+  }
+
+  function pushQuizOutcome(q, wasCorrect){
+    try {
+      if (!Array.isArray(window.__QUIZ_LAST_ORDER)) window.__QUIZ_LAST_ORDER = [];
+      var title = (q && q.meta && q.meta.title) || '';
+      window.__QUIZ_LAST_ORDER.push({
+        title: title,
+        correct: !!wasCorrect,
+        question: (q && q.questionText) || '',
+        info: safeDidYouKnow(title)
+      });
+    } catch(e) {}
+  }
+
 
   const quizBox        = document.querySelector(".quiz-box");
   const stageEl        = document.querySelector(".stage");
@@ -5784,12 +5806,12 @@ if (typeof holdTapCleanup === 'function') { try { holdTapCleanup(); } catch(_) {
     if (q.checkAnswer(pickedKey)) {
       
       try { if (!Array.isArray(window.__answerLog)) window.__answerLog = []; window.__answerLog.push(true); } catch(e) {}
-try { window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: true }); } catch(e) {}
+      pushQuizOutcome(q, true);
 optionEl.classList.add("correct"); optionEl.insertAdjacentHTML("beforeend", correctIcon);
       quiz.correctAnswers++;
       showResultOverlay('correct');
     } else {
-      optionEl.classList.add("incorrect"); try { window.__QUIZ_LAST_ORDER.push({ title: (q && q.meta && q.meta.title) || '', correct: false }); } catch(e) {}
+      optionEl.classList.add("incorrect"); pushQuizOutcome(q, false);
 optionEl.insertAdjacentHTML("beforeend", incorrectIcon);
       showResultOverlay('wrong');
     }
@@ -5955,7 +5977,7 @@ function showScore(correct, total){
       timeLeft -= 1;
       secondEl.textContent = Math.max(0, timeLeft);
       if (timeLeft < 0){
-        try { var __qTimeout = quiz && typeof quiz.callQuestion==='function' ? quiz.callQuestion() : null; if (__qTimeout) { window.__QUIZ_LAST_ORDER.push({ title: (__qTimeout.meta && __qTimeout.meta.title) || '', correct: false }); } } catch(e) {}
+        try { var __qTimeout = quiz && typeof quiz.callQuestion==='function' ? quiz.callQuestion() : null; if (__qTimeout) { pushQuizOutcome(__qTimeout, false); } } catch(e) {}
 clearIntervalSafe();
         try { if (!Array.isArray(window.__answerLog)) window.__answerLog = []; window.__answerLog.push(false); } catch(e) {}
         timeTextEl.textContent = "Time Over";
@@ -8401,48 +8423,164 @@ window.__openCredits = function(orderTitles){
     "superman (2025)": "sm-arcade"                // or "sm3-euclid" — update to match
   };
 
+  var reviewClips = [];
+  var reviewCurrentIndex = 0;
+
   function ensureRGDom(){
     var root = document.getElementById('rg-overlay');
     if (!root){
       var css = document.createElement('style');
-      css.textContent = '#rg-overlay{position:fixed;inset:0;z-index:2147483647;display:none;background:rgba(0,0,0,.88);backdrop-filter:blur(2px)}'
-        + '#rg-inner{position:absolute;inset:0;display:grid;grid-template-rows:auto 1fr auto;padding:clamp(12px,2.4vw,24px)}'
-        + '#rg-header{color:#fff;text-align:center;margin-bottom:8px}'
-        + '#rg-title{font-size:clamp(20px,4.2vw,28px);font-weight:800;letter-spacing:.02em;text-shadow:0 2px 0 #000}'
-        + '#rg-sub{margin-top:6px;font-size:clamp(14px,2.8vw,16px);opacity:.85}'
-        + '#rg-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 0;align-content:start}'
-        + '@media (max-width:920px){#rg-grid{grid-template-columns:repeat(4,1fr)}}'
-        + '@media (max-width:640px){#rg-grid{grid-template-columns:repeat(3,1fr)}}'
-        + '@media (max-width:460px){#rg-grid{grid-template-columns:repeat(2,1fr)}}'
-        + '.rg-card{position:relative;background:#111;border:1px solid #ffffff22;border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.55);transform:translateY(8px);opacity:0;animation:rgIn .5s ease forwards}'
-        + '@keyframes rgIn{to{opacity:1;transform:none}}'
-        + '.rg-thumb{width:100%;height:0;padding-top:66.666%;background:#222 center/cover no-repeat;display:grid;place-items:center;color:#aaa;font-size:12px}'
-        + '.rg-logo{position:absolute;inset:8px 8px auto 8px;height:28px;max-width:calc(100% - 16px);object-fit:contain;mix-blend-mode:screen;filter:drop-shadow(0 2px 6px rgba(0,0,0,.6));pointer-events:none}'
-        + '.rg-meta{display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px;color:#fff;font-size:12px}'
-        + '.rg-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.95}'
-        + '.rg-chip{align-self:start;padding:3px 8px;border-radius:999px;font-weight:700;letter-spacing:.02em;border:1px solid #0000}'
-        + '.rg-chip.ok{background:#19c37d;color:#071e11}.rg-chip.bad{background:#ff4b4b;color:#2b0508}'
-        + '#rg-footer{display:flex;gap:10px;justify-content:center;padding-top:6px}'
-        + '#rg-footer .navbtn,#rg-footer button{background:#1a1a1a;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer;box-shadow:0 12px 36px rgba(0,0,0,.55)}';
-        // + '#rg-close{position:absolute;top:10px;right:10px;background:#00000088;color:#fff;border:1px solid #ffffff22;border-radius:10px;padding:8px 10px;font-size:12px;cursor:pointer}';
+      css.textContent =
+        '#rg-overlay{position:fixed;inset:0;z-index:2147483647;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.92);padding:clamp(16px,3vw,32px);}' +
+        '#rg-overlay.show{display:flex;}' +
+        '#rg-inner{width:min(1400px,96vw);max-height:96vh;display:grid;grid-template-rows:auto 1fr auto;row-gap:18px;color:#fff;font-family:"AdvercaseBold",sans-serif;}' +
+        '#rg-header{text-align:center;}' +
+        '#rg-title{font-size:clamp(22px,4vw,32px);font-weight:800;letter-spacing:.08em;text-transform:uppercase;text-shadow:0 6px 26px rgba(0,0,0,0.65);}' +
+        '#rg-sub{margin-top:6px;font-size:clamp(16px,2.6vw,18px);opacity:.9;font-family:"Gellix",sans-serif;}' +
+        '#rg-stage-area{position:relative;}' +
+        '#rg-stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:18px;overflow:hidden;box-shadow:0 28px 60px rgba(0,0,0,0.65);border:1px solid rgba(255,255,255,0.12);}' +
+        '#rg-stage-video{width:100%;height:100%;object-fit:cover;background:#000;}' +
+        '#rg-stage-logo{position:absolute;top:20px;left:20px;max-width:32%;max-height:20%;object-fit:contain;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.8)) brightness(0) invert(1);mix-blend-mode:screen;transition:opacity .25s ease;}' +
+        '#rg-stage-logo.hidden{opacity:0;visibility:hidden;}' +
+        '.rg-control-btn{position:absolute;border:none;border-radius:999px;background:rgba(0,0,0,0.55);color:#fff;padding:8px 14px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;box-shadow:0 12px 30px rgba(0,0,0,0.55);backdrop-filter:blur(4px);font-family:"Gellix",sans-serif;text-transform:uppercase;letter-spacing:.08em;}' +
+        '.rg-control-btn:hover{background:rgba(0,0,0,0.75);}' +
+        '#rg-fullscreen-toggle{top:20px;right:20px;}' +
+        '#rg-info-toggle{bottom:20px;left:20px;}' +
+        '#rg-strip-toggle{bottom:20px;right:20px;display:none;}' +
+        '#rg-info-panel{position:absolute;top:0;right:0;height:100%;width:min(340px,42%);background:rgba(8,8,8,0.92);border-left:1px solid rgba(255,255,255,0.08);padding:24px;display:flex;flex-direction:column;gap:16px;transform:translateX(100%);opacity:0;transition:transform .3s ease,opacity .3s ease;box-shadow:inset 0 0 40px rgba(0,0,0,0.55);}' +
+        '#rg-overlay.rg-info-open #rg-info-panel{transform:translateX(0);opacity:1;}' +
+        '#rg-info-question{font-size:clamp(16px,2.6vw,20px);line-height:1.35;}' +
+        '#rg-info-status{font-size:clamp(14px,2.4vw,18px);font-weight:700;letter-spacing:.06em;text-transform:uppercase;}' +
+        '#rg-info-status.correct{color:#19c37d;}' +
+        '#rg-info-status.wrong{color:#ff4b4b;}' +
+        '#rg-info-text{font-family:"Gellix",sans-serif;font-size:clamp(14px,2.2vw,17px);line-height:1.45;opacity:.88;white-space:pre-wrap;}' +
+        '#rg-strip-wrapper{border-top:1px solid rgba(255,255,255,0.08);padding-top:10px;padding-bottom:6px;}' +
+        '#rg-strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scroll-behavior:smooth;}' +
+        '#rg-strip::-webkit-scrollbar{height:6px;}' +
+        '#rg-strip::-webkit-scrollbar-track{background:rgba(255,255,255,0.06);border-radius:999px;}' +
+        '#rg-strip::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.28);border-radius:999px;}' +
+        '.rg-thumb-btn{flex:0 0 auto;width:150px;background:none;border:none;color:#f6f6f6;display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:0;cursor:pointer;text-align:center;font-family:"Gellix",sans-serif;font-weight:600;position:relative;}' +
+        '.rg-thumb-btn:focus{outline:2px solid #f5d75c;outline-offset:3px;}' +
+        '.rg-thumb-btn.fixed{position:sticky;left:0;z-index:3;background:rgba(10,10,10,0.92);backdrop-filter:blur(4px);padding-right:6px;margin-right:6px;}' +
+        '.rg-thumb-btn.archetype .rg-thumb-img{background:linear-gradient(135deg,rgba(245,215,92,0.28),rgba(255,255,255,0.1));color:#f5d75c;}' +
+        '.rg-thumb-img{position:relative;width:100%;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#161616 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#bdbdbd;font-size:13px;text-transform:uppercase;letter-spacing:.04em;padding:8px;}' +
+        '.rg-thumb-btn.active .rg-thumb-img{outline:2px solid #f5d75c;box-shadow:0 18px 36px rgba(0,0,0,0.55);}' +
+        '.rg-thumb-title{font-size:13px;line-height:1.3;text-transform:none;white-space:normal;}' +
+        '.rg-thumb-badge{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:16px;font-weight:700;background:#000;border:2px solid rgba(255,255,255,0.18);}' +
+        '.rg-thumb-badge.ok{background:#19c37d;color:#032d14;}' +
+        '.rg-thumb-badge.bad{background:#ff4b4b;color:#3a0202;}' +
+        '.rg-thumb-fallback{padding:0 6px;}' +
+        '#rg-overlay.rg-fullscreen #rg-strip-wrapper{opacity:0;pointer-events:none;}' +
+        '#rg-overlay.rg-fullscreen.rg-strip-visible #rg-strip-wrapper{opacity:1;pointer-events:auto;}' +
+        '#rg-overlay.rg-fullscreen #rg-strip-toggle{display:inline-flex;}' +
+        '#rg-footer{display:flex;justify-content:center;padding-top:4px;}' +
+        '#rg-footer .navbtn,#rg-footer button{background:#1a1a1a;color:#fff;border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:10px 16px;font-size:14px;cursor:pointer;box-shadow:0 16px 36px rgba(0,0,0,0.45);}';
       document.head.appendChild(css);
 
       root = document.createElement('div');
       root.id = 'rg-overlay';
-      root.innerHTML = '<div id="rg-inner">'
-        + '<div id="rg-header"><div id="rg-title">Review Your Answers</div><div id="rg-sub"></div></div>'
-        + '<div id="rg-grid" role="list"></div>'
-        + '<div id="rg-footer"><img id="rg-again" src="images/ttrs.png" class="navbtn" style="cursor:pointer;width:140px;max-width:50%;height:auto;" alt="Try Again"></div>';
-// + '<div id="rg-footer"><button id="rg-again" class="navbtn">Try Again</button></div>';
-        // + '</div><button id="rg-close" title="Close">Close</button>';
+      root.innerHTML =
+        '<div id="rg-inner">' +
+          '<div id="rg-header"><div id="rg-title">Review Your Answers</div><div id="rg-sub"></div></div>' +
+          '<div id="rg-stage-area">' +
+            '<div id="rg-stage" class="rg-stage">' +
+              '<video id="rg-stage-video" playsinline controls preload="metadata"></video>' +
+              '<img id="rg-stage-logo" class="hidden" alt="Film logo">' +
+              '<button id="rg-fullscreen-toggle" type="button" class="rg-control-btn" aria-label="Toggle fullscreen">Fullscreen</button>' +
+              '<button id="rg-info-toggle" type="button" class="rg-control-btn" aria-expanded="false">Details</button>' +
+              '<button id="rg-strip-toggle" type="button" class="rg-control-btn">Thumbnails</button>' +
+              '<div id="rg-info-panel" aria-live="polite">' +
+                '<div id="rg-info-question"></div>' +
+                '<div id="rg-info-status"></div>' +
+                '<div id="rg-info-text"></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div id="rg-strip-wrapper"><div id="rg-strip" role="list"></div></div>' +
+          '<div id="rg-footer"><img id="rg-again" src="images/ttrs.png" class="navbtn" style="cursor:pointer;width:140px;max-width:50%;height:auto;" alt="Try Again"></div>' +
+        '</div>';
       document.body.appendChild(root);
-      root.querySelector('#rg-again').addEventListener('click', function(){ hideRG();
-      if (typeof window.tryAgain === 'function') window.tryAgain(); else location.reload();});
-      // root.querySelector('#rg-close').addEventListener('click', function(){ hideRG(); });
+
+      var refs = {
+        stage: root.querySelector('#rg-stage'),
+        video: root.querySelector('#rg-stage-video'),
+        logo: root.querySelector('#rg-stage-logo'),
+        infoToggle: root.querySelector('#rg-info-toggle'),
+        infoPanel: root.querySelector('#rg-info-panel'),
+        infoQuestion: root.querySelector('#rg-info-question'),
+        infoStatus: root.querySelector('#rg-info-status'),
+        infoText: root.querySelector('#rg-info-text'),
+        strip: root.querySelector('#rg-strip'),
+        fullscreenToggle: root.querySelector('#rg-fullscreen-toggle'),
+        stripToggle: root.querySelector('#rg-strip-toggle')
+      };
+      root.__rgRefs = refs;
+
+      refs.infoToggle.addEventListener('click', function(ev){
+        ev.preventDefault();
+        var open = root.classList.toggle('rg-info-open');
+        refs.infoToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        refs.infoToggle.textContent = open ? 'Hide Details' : 'Details';
+      });
+
+      refs.fullscreenToggle.addEventListener('click', function(ev){
+        ev.preventDefault();
+        try {
+          if (document.fullscreenElement){
+            document.exitFullscreen();
+          } else if (refs.stage && refs.stage.requestFullscreen){
+            refs.stage.requestFullscreen();
+          }
+        } catch(_) {}
+      });
+
+      refs.stripToggle.addEventListener('click', function(ev){
+        ev.preventDefault();
+        if (!root.classList.contains('rg-fullscreen')) return;
+        var visible = root.classList.toggle('rg-strip-visible');
+        refs.stripToggle.textContent = visible ? 'Hide Thumbnails' : 'Thumbnails';
+      });
+
+      document.addEventListener('fullscreenchange', function(){
+        if (!root || !root.__rgRefs) return;
+        var active = document.fullscreenElement === root.__rgRefs.stage;
+        root.classList.toggle('rg-fullscreen', active);
+        if (!active){
+          root.classList.remove('rg-strip-visible');
+          refs.stripToggle.textContent = 'Thumbnails';
+        }
+      });
+
+      root.querySelector('#rg-again').addEventListener('click', function(){
+        hideRG();
+        if (typeof window.tryAgain === 'function') window.tryAgain();
+        else location.reload();
+      });
     }
     return root;
   }
-  function hideRG(){ var root = document.getElementById('rg-overlay'); if (root) root.style.display = 'none'; }
+
+  function hideRG(){
+    var root = document.getElementById('rg-overlay');
+    if (!root) return;
+    root.classList.remove('show','rg-info-open','rg-fullscreen','rg-strip-visible');
+    root.style.display = 'none';
+    try {
+      var refs = root.__rgRefs || {};
+      if (refs.video){
+        refs.video.pause();
+        refs.video.removeAttribute('src');
+        refs.video.load();
+      }
+      if (refs.infoToggle){
+        refs.infoToggle.textContent = 'Details';
+        refs.infoToggle.setAttribute('aria-expanded','false');
+      }
+      if (refs.stripToggle){
+        refs.stripToggle.textContent = 'Thumbnails';
+      }
+    } catch(_) {}
+  }
 
   function unwrapTitle(x){
     if (typeof x === 'string') return x;
@@ -8463,124 +8601,187 @@ window.__openCredits = function(orderTitles){
     return 'images/films/' + prefix + '.png';
   }
   function assetFromListItem(item, title){
-    // Prefer the explicit fields on item
     var v = getVideo(item);
     if (typeof v === 'string'){
-      var base = v.replace(/^.*\//,'').replace(/\.mp4$/,'');
+      var base = v.replace(/^.*\/,'').replace(/\.mp4$/,'');
       return { image: 'images/' + base + '.png', logo: logoFromBase(base), video: v };
     }
     if (item && typeof item.image === 'string'){
-      var baseImg = item.image.replace(/^.*\//,'').replace(/\.png$/,'');
+      var baseImg = item.image.replace(/^.*\/,'').replace(/\.png$/,'');
       return { image: item.image, logo: logoFromBase(baseImg), video: 'videos/' + baseImg + '.mp4' };
     }
-    // Fall back to title map
     var base = baseFromTitle(title);
     if (base){ return { image: 'images/' + base + '.png', logo: logoFromBase(base), video: 'videos/' + base + '.mp4' }; }
     return null;
-  }
-
-  var reviewClips = [];
-
-  function ensureReviewPlayerStyles(){
-    if (document.getElementById('rg-player-style')) return;
-    var css = document.createElement('style');
-    css.id = 'rg-player-style';
-    css.textContent =
-      '#rg-player-overlay{position:fixed;inset:0;z-index:2147483647;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.92);padding:24px;}' +
-      '#rg-player-overlay.show{display:flex;}' +
-      '#rg-player-overlay .rg-player-stage{position:relative;width:min(1280px,92vw);aspect-ratio:16/9;background:#000;border-radius:18px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.08);}' +
-      '#rg-player-overlay .rg-player-video{width:100%;height:100%;object-fit:cover;background:#000;}' +
-      '#rg-player-overlay .rg-player-logo{position:absolute;top:20px;left:20px;max-width:46%;max-height:22%;object-fit:contain;filter:drop-shadow(0 10px 26px rgba(0,0,0,0.8)) brightness(0) invert(1);mix-blend-mode:screen;pointer-events:none;}' +
-      '#rg-player-overlay .rg-player-logo.hidden{display:none;}' +
-      '#rg-player-overlay .rg-player-close{position:absolute;top:16px;right:16px;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,0.35);background:rgba(0,0,0,0.55);color:#fff;font-size:26px;line-height:1;text-align:center;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(0,0,0,0.65);}' +
-      '#rg-player-overlay .rg-player-close:focus{outline:2px solid rgba(255,255,255,0.6);outline-offset:2px;}' +
-      '#rg-player-overlay .rg-player-close:hover{background:rgba(0,0,0,0.75);}';
-    document.head.appendChild(css);
-  }
-
-  function ensureReviewPlayer(){
-    ensureReviewPlayerStyles();
-    if (window.__rgPlayerOverlay) return window.__rgPlayerOverlay;
-
-    var root = document.createElement('div');
-    root.id = 'rg-player-overlay';
-    root.setAttribute('role', 'dialog');
-    root.setAttribute('aria-modal', 'true');
-
-    var stage = document.createElement('div'); stage.className = 'rg-player-stage';
-    var close = document.createElement('button'); close.type = 'button'; close.className = 'rg-player-close'; close.setAttribute('aria-label', 'Close clip'); close.textContent = '×';
-    var video = document.createElement('video'); video.className = 'rg-player-video'; video.playsInline = true; video.controls = true; video.preload = 'auto';
-    var logo = document.createElement('img'); logo.className = 'rg-player-logo hidden'; logo.alt = 'Film logo';
-
-    stage.appendChild(close);
-    stage.appendChild(video);
-    stage.appendChild(logo);
-    root.appendChild(stage);
-    document.body.appendChild(root);
-
-    function stopVideo(){
-      try { video.pause(); } catch(_){}
-      video.removeAttribute('src');
-      video.load();
-    }
-
-    function hide(){
-      if (!root.classList.contains('show')) return;
-      stopVideo();
-      root.classList.remove('show');
-      root.removeAttribute('aria-label');
-    }
-
-    function show(data){
-      if (!data || !data.video) return;
-      stopVideo();
-      root.setAttribute('aria-label', data.title ? data.title + ' clip' : 'Film clip');
-      if (data.logo){
-        logo.src = data.logo;
-        logo.alt = data.title ? data.title + ' logo' : 'Film logo';
-        logo.classList.remove('hidden');
-      } else {
-        logo.classList.add('hidden');
-      }
-      if (data.poster){
-        video.setAttribute('poster', data.poster);
-      } else {
-        video.removeAttribute('poster');
-      }
-      video.src = data.video;
-      video.load();
-      root.classList.add('show');
-      try {
-        var playPromise = video.play();
-        if (playPromise && typeof playPromise.then === 'function'){
-          playPromise.catch(function(){});
-        }
-      } catch(_){}
-      requestAnimationFrame(function(){ try { close.focus(); } catch(_){} });
-    }
-
-    close.addEventListener('click', function(ev){ ev.preventDefault(); hide(); });
-    root.addEventListener('click', function(ev){ if (ev.target === root) hide(); });
-    document.addEventListener('keydown', function(ev){ if (ev.key === 'Escape') hide(); }, { passive: true });
-
-    window.__rgPlayerOverlay = { root: root, stage: stage, video: video, logo: logo, close: close, show: show, hide: hide, stop: stopVideo };
-    return window.__rgPlayerOverlay;
   }
 
   function setReviewClips(clips){
     reviewClips = Array.isArray(clips) ? clips.slice() : [];
   }
 
+  function buildThumb(root, clip, index){
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rg-thumb-btn' + (clip.fixed ? ' fixed' : '') + (clip.type === 'archetype' ? ' archetype' : '');
+    btn.dataset.index = String(index);
+    btn.setAttribute('role', 'listitem');
+    btn.setAttribute('aria-label', clip.title || ('Clip ' + (index + 1)));
+
+    var img = document.createElement('div');
+    img.className = 'rg-thumb-img';
+    if (clip.poster){
+      img.style.backgroundImage = 'url(' + clip.poster + ')';
+    } else if (clip.thumbnail){
+      img.style.backgroundImage = 'url(' + clip.thumbnail + ')';
+    } else {
+      var fallback = document.createElement('span');
+      fallback.className = 'rg-thumb-fallback';
+      fallback.textContent = clip.title || 'Clip';
+      img.appendChild(fallback);
+    }
+
+    if (clip.type === 'quiz'){
+      var badge = document.createElement('span');
+      badge.className = 'rg-thumb-badge ' + (clip.correct ? 'ok' : 'bad');
+      badge.textContent = clip.correct ? '✓' : '✕';
+      img.appendChild(badge);
+    }
+
+    var title = document.createElement('div');
+    title.className = 'rg-thumb-title';
+    title.textContent = clip.title || ('Question ' + (index + 1));
+
+    btn.appendChild(img);
+    btn.appendChild(title);
+
+    btn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      openReviewClip(index);
+    });
+
+    clip._button = btn;
+    return btn;
+  }
+
+  function updateInfo(root, clip){
+    var refs = root.__rgRefs || {};
+    if (!refs.infoQuestion || !refs.infoStatus || !refs.infoText) return;
+    var questionText = '';
+    var statusText = '';
+    var infoText = '';
+    var statusClass = '';
+    if (clip){
+      if (clip.type === 'archetype'){
+        questionText = 'Your Archetype';
+        statusText = clip.title || '';
+        infoText = clip.info || '';
+        statusClass = 'correct';
+      } else {
+        questionText = clip.question || clip.title || '';
+        statusText = clip.correct ? 'Correct' : 'Incorrect';
+        infoText = clip.info || '';
+        statusClass = clip.correct ? 'correct' : 'wrong';
+      }
+    }
+    refs.infoQuestion.textContent = questionText;
+    refs.infoStatus.textContent = statusText;
+    refs.infoStatus.className = statusClass;
+    if (!infoText){ infoText = 'No additional info available.'; }
+    refs.infoText.textContent = infoText;
+  }
+
+  function markActive(root, index){
+    var refs = root.__rgRefs || {};
+    if (!refs.strip) return;
+    var buttons = refs.strip.querySelectorAll('.rg-thumb-btn');
+    buttons.forEach(function(btn){
+      if (!btn) return;
+      if (btn.dataset.index === String(index)){
+        btn.classList.add('active');
+        try { btn.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' }); } catch(_) {}
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  function playClip(root, clip, index){
+    var refs = root.__rgRefs || {};
+    if (!refs.video) return;
+    reviewCurrentIndex = index;
+    try { refs.video.pause(); } catch(_) {}
+    if (clip && clip.video){
+      refs.video.src = clip.video;
+      if (clip.poster) refs.video.setAttribute('poster', clip.poster);
+      else refs.video.removeAttribute('poster');
+      refs.video.load();
+      try {
+        var playPromise = refs.video.play();
+        if (playPromise && typeof playPromise.then === 'function'){
+          playPromise.catch(function(){});
+        }
+      } catch(_) {}
+    } else {
+      refs.video.removeAttribute('src');
+      refs.video.load();
+    }
+    if (refs.logo){
+      if (clip && clip.logo){
+        refs.logo.src = clip.logo;
+        refs.logo.classList.remove('hidden');
+      } else {
+        refs.logo.classList.add('hidden');
+      }
+    }
+    updateInfo(root, clip);
+    markActive(root, index);
+  }
+
+  function renderReviewGallery(root, clips){
+    var refs = root.__rgRefs || {};
+    if (!refs.strip) return;
+    refs.strip.innerHTML = '';
+    if (!Array.isArray(clips) || !clips.length){
+      return;
+    }
+    clips.forEach(function(clip, idx){
+      var btn = buildThumb(root, clip, idx);
+      refs.strip.appendChild(btn);
+    });
+    root.classList.remove('rg-info-open','rg-strip-visible');
+    if (refs.infoToggle){
+      refs.infoToggle.setAttribute('aria-expanded','false');
+      refs.infoToggle.textContent = 'Details';
+    }
+    if (refs.stripToggle) refs.stripToggle.textContent = 'Thumbnails';
+    playClip(root, clips[0], 0);
+  }
+
+  function selectArchetype(score){
+    var map = [
+      { min: 0, max: 0, key: 'ticket-taker', video: 'videos/results/ticket-taker.mp4', label: 'Ticket Taker', description: 'You punched in for the show. Keep studying the reels and step into the spotlight next time.' },
+      { min: 1, max: 2, key: 'tpopcorn', video: 'videos/results/tpopcorn.mp4', label: 'Popcorn Crew', description: 'You’re keeping the concessions hot. A few more right answers and you’ll move onto the set.' },
+      { min: 3, max: 4, key: 'tstand-in', video: 'videos/results/tstand-in.mp4', label: 'Stand-In', description: 'You’re ready for your close-up—almost. Brush up on the trivia and you’ll be camera-ready.' },
+      { min: 5, max: 6, key: 'tprops', video: 'videos/results/tprops.mp4', label: 'Props Master', description: 'You know the set pieces by heart. A touch more practice and you’ll run the whole production.' },
+      { min: 7, max: 8, key: 'tstar', video: 'videos/results/tstar.mp4', label: 'Rising Star', description: 'You’re shining bright across Cleveland’s backlots. One more great take and awards season is yours.' },
+      { min: 9, max: 9, key: 'tdirector', video: 'videos/results/tdirector.mp4', label: 'Director', description: 'You call the shots with confidence. Roll credits—you’re leading this crew with style.' },
+      { min: 10, max: Infinity, key: 'tmogul', video: 'videos/results/tmogul.mp4', label: 'Mogul', description: 'Top of the marquee! You’ve mastered the canon and greenlit a blockbuster performance.' }
+    ];
+    for (var i=0;i<map.length;i++){
+      var m = map[i];
+      if (score >= m.min && score <= m.max){
+        return m;
+      }
+    }
+    return map[0];
+  }
+
   function openReviewClip(index){
     if (typeof index !== 'number' || index < 0 || index >= reviewClips.length) return;
+    var root = ensureRGDom();
+    if (!root) return;
     var clip = reviewClips[index];
-    if (!clip || !clip.video) return;
-    try {
-      var player = ensureReviewPlayer();
-      player.show(clip);
-    } catch(e){
-      try { console.warn('[2M] unable to open review clip', e); } catch(_){}
-    }
+    playClip(root, clip, index);
   }
 
   function showRG(payload){
@@ -8588,22 +8789,18 @@ window.__openCredits = function(orderTitles){
     var order = list.map(unwrapTitle).filter(Boolean).slice(0,10);
     var answers = (payload && payload.answers) || (Array.isArray(window.__answerLog) ? window.__answerLog : []);
 
-    // Derive answers directly from list objects if they carry a 'correct' flag to keep indices aligned
     (function alignAnswersWithOrder(){
       try{
         var hasObjects = Array.isArray(list) && list.length && typeof list[0] === 'object';
         if (hasObjects){
           var derived = list.map(function(it){ return !!(it && it.correct); });
-          // use derived if at least one boolean present (avoid all-false default if empty)
           var hasSignal = derived.some(function(v){ return v === true || v === false; });
           if (hasSignal){ answers = derived; }
         }
       }catch(e){}
-      // Ensure answers length matches order length
       if (Array.isArray(answers)){
         if (answers.length > order.length) answers = answers.slice(0, order.length);
-        if (answers.length < order.length) { 
-          // pad with false to keep indexes stable
+        if (answers.length < order.length) {
           answers = answers.concat(Array(order.length - answers.length).fill(false));
         }
       }
@@ -8612,14 +8809,25 @@ window.__openCredits = function(orderTitles){
 
     var root = ensureRGDom();
     var sub = root.querySelector('#rg-sub');
-    var grid = root.querySelector('#rg-grid');
     var clipData = [];
 
     var correct = 0; for (var i=0;i<answers.length;i++) if (answers[i]) correct++;
     if (!answers.length && typeof window.score === 'number') correct = window.score;
-    sub.textContent = 'Score: ' + correct + ' / ' + total;
+    if (sub) sub.textContent = 'Score: ' + correct + ' / ' + total;
 
-    grid.innerHTML = '';
+    var archetype = selectArchetype(correct);
+    clipData.push({
+      title: archetype.label,
+      video: archetype.video,
+      logo: null,
+      poster: null,
+      correct: true,
+      question: '',
+      info: 'Score ' + correct + ' / ' + total + '. ' + archetype.description,
+      type: 'archetype',
+      fixed: true
+    });
+
     for (var i=0; i<order.length; i++){
       var title = order[i];
       var item = Array.isArray(list) ? list[i] : null;
@@ -8627,53 +8835,37 @@ window.__openCredits = function(orderTitles){
 
       var logo = asset && asset.logo || null;
       var bg   = asset && asset.image || null;
+      var video = asset && asset.video || null;
       var ok = !!(answers && answers[i]);
-
-      var card = document.createElement('div'); card.className = 'rg-card'; card.style.animationDelay = 'calc(' + i + ' * 80ms)';
-      var thumb = document.createElement('div'); thumb.className = 'rg-thumb';
-      if (bg) thumb.style.backgroundImage = 'url(' + bg + ')'; else thumb.textContent = 'No image';
-      var meta = document.createElement('div'); meta.className = 'rg-meta';
-      var t = document.createElement('div'); t.className = 'rg-title'; t.textContent = title || ('Question ' + (i+1));
-      var chip = document.createElement('div'); chip.className = 'rg-chip ' + (ok?'ok':'bad'); chip.textContent = ok ? 'Correct' : 'Wrong';
-      meta.appendChild(t); meta.appendChild(chip);
-      card.appendChild(thumb);
-      if (logo){ var lg = document.createElement('img'); lg.className = 'rg-logo'; lg.alt='Logo'; lg.src = logo; card.appendChild(lg); }
-      card.appendChild(meta); grid.appendChild(card);
-
-      var clip = {
-        title: title,
-        video: asset && asset.video || null,
-        logo: logo || null,
-        poster: bg || null,
-        index: i
-      };
-      clipData.push(clip);
-
-      if (clip.video){
-        (function(idx){
-          card.dataset.rgClip = String(idx);
-          card.setAttribute('role', 'button');
-          card.tabIndex = 0;
-          card.addEventListener('click', function(ev){
-            if (ev){ ev.preventDefault(); ev.stopPropagation(); }
-            openReviewClip(idx);
-          });
-          card.addEventListener('keydown', function(ev){
-            if (!ev) return;
-            if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar'){
-              ev.preventDefault();
-              ev.stopPropagation();
-              openReviewClip(idx);
-            }
-          });
-        })(clipData.length - 1);
+      var questionText = item && item.question ? item.question : '';
+      var detailText = '';
+      if (item){
+        if (typeof item.info === 'string' && item.info){ detailText = item.info; }
+        else if (typeof item.fact === 'string' && item.fact){ detailText = item.fact; }
+        else if (typeof item.detail === 'string' && item.detail){ detailText = item.detail; }
       }
+
+      clipData.push({
+        title: title || ('Question ' + (i+1)),
+        video: video,
+        logo: logo,
+        poster: bg,
+        correct: ok,
+        question: questionText,
+        info: detailText,
+        type: 'quiz',
+        fixed: false
+      });
     }
 
     setReviewClips(clipData);
 
-    document.getElementById('rg-overlay').style.display = 'block';
-    console.log('[2M] review grid shown with', (order||[]).length, 'items');
+    if (root){
+      root.style.display = 'flex';
+      root.classList.add('show');
+      renderReviewGallery(root, clipData);
+    }
+    console.log('[2M] review gallery shown with', (order||[]).length, 'items');
   }
 
   ['__openCredits','openCredits','openCreditsModal','launchCredits','__showCredits','showCredits'].forEach(function(k){
@@ -8736,8 +8928,8 @@ window.__openCredits = function(orderTitles){
       banner = document.createElement('div'); banner.id = 'rg-award-banner';
       banner.innerHTML = '<img alt="Award">';
       var header = inner.querySelector('#rg-header');
-      var grid = inner.querySelector('#rg-grid');
-      if (header && grid && header.parentNode){ header.parentNode.insertBefore(banner, grid); }
+      var stageArea = inner.querySelector('#rg-stage-area');
+      if (header && stageArea && header.parentNode){ header.parentNode.insertBefore(banner, stageArea); }
       else { inner.insertBefore(banner, inner.firstChild); }
     }
     return banner;
