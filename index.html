@@ -9464,7 +9464,7 @@ window.__openCredits = function(orderTitles){
         max: 0,
         key: 'ticket-taker',
         videoFile: 'ticket-taker',
-        imageFile: 'ticket',
+        imageFile: 'ticket-taker',
         title: 'The Ticket-Taker',
         description: 'You’ve just stepped inside the theatre. You keep the reels turning and the crowds flowing — the unsung guardian of the silver screen.'
       },
@@ -9472,8 +9472,8 @@ window.__openCredits = function(orderTitles){
         min: 1,
         max: 2,
         key: 'popcorn',
-        videoFile: 'popcorn',
-        imageFile: 'popcorn',
+        videoFile: 'tpopcorn',
+        imageFile: 'tpopcorn',
         title: 'The Popcorn Clerk',
         description: 'Sticky floors, buttery hands, and pure movie magic. You fuel the fantasy one scoop at a time — the aroma of every matinee is your legacy.'
       },
@@ -9481,8 +9481,8 @@ window.__openCredits = function(orderTitles){
         min: 3,
         max: 4,
         key: 'stand-in',
-        videoFile: 'stand-in',
-        imageFile: 'stand-in',
+        videoFile: 'tstand-in',
+        imageFile: 'tstand-in',
         title: 'The Stand-In',
         description: 'You’re in the frame, but just out of focus. Always ready for your cue, you make the stars shine brighter — even if no one remembers your name.'
       },
@@ -9490,8 +9490,8 @@ window.__openCredits = function(orderTitles){
         min: 5,
         max: 6,
         key: 'props',
-        videoFile: 'props',
-        imageFile: 'props',
+        videoFile: 'tprops',
+        imageFile: 'tprops',
         title: 'The Prop Master',
         description: 'You build the worlds others dream in. Every cigarette case, every fake revolver, every flickering sign — your craft sells the illusion.'
       },
@@ -9499,8 +9499,8 @@ window.__openCredits = function(orderTitles){
         min: 7,
         max: 8,
         key: 'star',
-        videoFile: 'star',
-        imageFile: 'star',
+        videoFile: 'tstar',
+        imageFile: 'tstar',
         title: 'A Hollywood Star',
         description: 'The spotlight bends toward you. Lines delivered, close-ups flawless — you’re the face on the poster, the reason the crowd still believes.'
       },
@@ -9508,8 +9508,8 @@ window.__openCredits = function(orderTitles){
         min: 9,
         max: 9,
         key: 'director',
-        videoFile: 'director',
-        imageFile: 'director',
+        videoFile: 'tdirector',
+        imageFile: 'tdirector',
         title: 'The Director',
         description: 'You call the shots. Angles, edits, emotion — all orbit your vision. The city itself bends to your storyboards.'
       },
@@ -9517,8 +9517,8 @@ window.__openCredits = function(orderTitles){
         min: 10,
         max: Infinity,
         key: 'mogul',
-        videoFile: 'mogul',
-        imageFile: 'mogul',
+        videoFile: 'tmogul',
+        imageFile: 'tmogul',
         title: 'The Hollywood Mogul',
         description: 'You own the backlot, the skyline, the dream factory. Every deal’s a fade-in, every fortune a final cut — and the credits always end with your name.'
       }
@@ -10161,6 +10161,22 @@ window.__openCredits = function(orderTitles){
   const FALLBACK_SRC    = 'videos/0.mp4';
   const TITLE_CANDIDATES = ['videos/r2r-title.mp4', 'videos/r2r-title-r.mp4'];
 
+  function __r2r_detectAndroidWebView(){
+    try {
+      if (window.__R2R_FORCE_WEBVIEW_MODE === true) return true;
+    } catch(_) {}
+    var ua = '';
+    try { ua = navigator.userAgent || navigator.vendor || ''; }
+    catch(_) { ua = ''; }
+    ua = String(ua).toLowerCase();
+    var isAndroid = ua.indexOf('android') !== -1;
+    var hasWvToken = ua.indexOf(' wv') !== -1 || ua.indexOf('; wv;') !== -1;
+    var hasVersionToken = ua.indexOf('version/') !== -1 && ua.indexOf('chrome/') !== -1 && ua.indexOf('safari/') === -1;
+    return isAndroid && (hasWvToken || hasVersionToken);
+  }
+
+  const __r2r_isAndroidWebView = __r2r_detectAndroidWebView();
+
   let __r2r_firstLaunch = true;
   let __r2r_idleTimer = null;
   let __r2r_precachePromise = null;
@@ -10193,6 +10209,67 @@ window.__openCredits = function(orderTitles){
   function __r2r_normalizeHref(src){
     try { return new URL(src, location.href).href; }
     catch(_) { return src; }
+  }
+
+  async function __r2r_pickSplashSource(opts = {}){
+    const { requireTitle=false, preferTitle=false, onFirst=false, onReset=false } = opts;
+    const pool = await __r2r_getSplashList();
+    if (requireTitle && TITLE_CANDIDATES.length) return __r2r_pickRandom(TITLE_CANDIDATES);
+    if (preferTitle && TITLE_CANDIDATES.length && Math.random() < 0.8) return __r2r_pickRandom(TITLE_CANDIDATES);
+    if (__r2r_shouldPlayTitle({ onFirst, onReset }) && TITLE_CANDIDATES.length) return __r2r_pickRandom(TITLE_CANDIDATES);
+    if (Array.isArray(pool) && pool.length) return __r2r_pickRandom(pool);
+    return FALLBACK_SRC;
+  }
+
+  function __r2r_setVideoSourceWithFallback(videoEl, primarySrc){
+    return new Promise((resolve) => {
+      const tryLoad = (src, isFallback) => {
+        Array.from(videoEl.querySelectorAll('source')).forEach((node) => node.remove());
+        videoEl.removeAttribute('src');
+        videoEl.load();
+
+        if (!src){
+          if (!isFallback && FALLBACK_SRC){
+            tryLoad(FALLBACK_SRC, true);
+          } else {
+            resolve();
+          }
+          return;
+        }
+
+        const sourceEl = document.createElement('source');
+        sourceEl.src = src;
+        sourceEl.type = src.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4';
+
+        const cleanup = () => {
+          videoEl.removeEventListener('canplay', onCanPlay);
+          sourceEl.removeEventListener('error', onError);
+        };
+
+        const onCanPlay = () => {
+          cleanup();
+          __r2r_markSource(src, true);
+          resolve(src);
+        };
+
+        const onError = () => {
+          cleanup();
+          __r2r_markSource(src, false);
+          if (!isFallback && FALLBACK_SRC && src !== FALLBACK_SRC){
+            tryLoad(FALLBACK_SRC, true);
+          } else {
+            resolve();
+          }
+        };
+
+        sourceEl.addEventListener('error', onError, { once: true });
+        videoEl.addEventListener('canplay', onCanPlay, { once: true });
+        videoEl.appendChild(sourceEl);
+        videoEl.load();
+      };
+
+      tryLoad(primarySrc, false);
+    });
   }
 
   async function __r2r_precacheSplashSources(){
@@ -10386,6 +10463,8 @@ window.__openCredits = function(orderTitles){
       v.disableRemotePlayback = true;
       v.controls = false;
 
+      const useQueueStrategy = __r2r_isAndroidWebView === true;
+
       if (!v.__r2rBoundHandlers){
         const onEnded = async () => {
           if (document.hidden) {
@@ -10412,14 +10491,27 @@ window.__openCredits = function(orderTitles){
         v.__r2rBoundHandlers = { onEnded, onWaiting, onStalled, onVisibility };
       }
 
-      const queue = await __r2r_buildSplashQueue({ requireTitle, preferTitle, onFirst, onReset });
-      await __r2r_setVideoSourceFromQueue(v, queue);
+      if (useQueueStrategy){
+        const queue = await __r2r_buildSplashQueue({ requireTitle, preferTitle, onFirst, onReset });
+        await __r2r_setVideoSourceFromQueue(v, queue);
+      } else {
+        const chosen = await __r2r_pickSplashSource({ requireTitle, preferTitle, onFirst, onReset });
+        await __r2r_setVideoSourceWithFallback(v, chosen);
+      }
 
       const start = async () => {
         try {
-          if (isFinite(v.duration) && v.duration > 0.6) {
-            const offset = Math.max(0, v.duration - 0.75);
-            v.currentTime = Math.min(0.25, offset);
+          if (isFinite(v.duration)) {
+            if (useQueueStrategy) {
+              if (v.duration > 0.6) {
+                const offset = Math.max(0, v.duration - 0.75);
+                v.currentTime = Math.min(0.25, offset);
+              }
+            } else if (v.duration > 1.5) {
+              const maxOffset = Math.max(0.5, v.duration - 0.5);
+              const random = Math.random() * Math.max(0, v.duration - 1.5);
+              v.currentTime = Math.min(maxOffset, Math.max(0.5, random));
+            }
           }
         } catch(_){}
         try { await v.play(); } catch(_){}
@@ -10428,6 +10520,9 @@ window.__openCredits = function(orderTitles){
       const onCPT = () => { v.removeEventListener('canplaythrough', onCPT); start(); };
       v.addEventListener('canplaythrough', onCPT, { once:true });
       v.addEventListener('loadedmetadata', () => setTimeout(() => { if (v.paused) start(); }, 160), { once:true });
+      if (!useQueueStrategy) {
+        setTimeout(() => { if (v.paused) start(); }, 200);
+      }
     })();
 
     try {
