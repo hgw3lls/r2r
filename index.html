@@ -8444,7 +8444,7 @@ window.__openCredits = function(orderTitles){
         '#rg-thumb-track::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:999px;}',
         '.rg-thumb-item{position:relative;flex:0 0 auto;width:160px;display:flex;flex-direction:column;gap:6px;scroll-snap-align:start;}',
         '.rg-thumb-item.archetype{position:sticky;left:0;z-index:4;margin-right:0;}',
-        '.rg-thumb-item.archetype::before{content:"";position:absolute;top:-32px;bottom:-32px;left:-160px;right:0;z-index:-1;background:rgba(0,0,0,.92);border-radius:40px;box-shadow:0 32px 76px rgba(0,0,0,.72);pointer-events:none;}',
+        '.rg-thumb-item.archetype::before{content:"";position:absolute;top:-32px;bottom:-32px;left:calc(-1 * var(--rg-arch-cover, 200px));width:calc(100% + var(--rg-arch-cover, 200px));z-index:-1;background:rgba(0,0,0,.92);border-radius:40px;box-shadow:0 32px 76px rgba(0,0,0,.72);pointer-events:none;}',
         '.rg-thumb-item.archetype .rg-thumb-btn{background:#101010;box-shadow:none;}',
         '.rg-thumb-item.filler{pointer-events:none;}',
         '.rg-thumb-item.filler .rg-thumb-btn{cursor:default;background:#000;box-shadow:none;border:1px solid rgba(255,255,255,.08);}',
@@ -8830,29 +8830,41 @@ window.__openCredits = function(orderTitles){
   }
   function updateThumbEdgeSpacing(track){
     if (!track || typeof window.getComputedStyle !== 'function') return;
-    var edgeGap = 0;
+    var trackStyles = null;
     try {
-      var trackStyles = window.getComputedStyle(track);
+      trackStyles = window.getComputedStyle(track);
+    } catch(_){}
+    var edgeGap = 0;
+    if (trackStyles){
       edgeGap = parseFloat(trackStyles.getPropertyValue('--rg-edge-gap') || trackStyles.paddingLeft || '0');
       if (!isFinite(edgeGap)) edgeGap = 0;
-    } catch(_){}
+    }
+    var trackGap = 0;
+    if (trackStyles){
+      var gapVal = trackStyles.getPropertyValue('column-gap') || trackStyles.getPropertyValue('gap') || '0';
+      trackGap = parseFloat(gapVal || '0');
+      if (!isFinite(trackGap) || trackGap < 0){ trackGap = 0; }
+    }
     var archetypeItem = track.querySelector('.rg-thumb-item.archetype');
     var overhang = 0;
+    var cover = 0;
     if (archetypeItem){
       var rect = archetypeItem.getBoundingClientRect();
-      if (rect && rect.width){ overhang += rect.width; }
+      var tileWidth = rect && rect.width ? rect.width : 0;
+      if (tileWidth > 0){
+        cover = tileWidth + trackGap;
+        overhang += tileWidth;
+      }
       try {
         var archetypeStyles = window.getComputedStyle(archetypeItem);
         var mr = parseFloat(archetypeStyles.marginRight || '0');
         if (isFinite(mr) && mr > 0){ overhang += mr; }
-        var before = window.getComputedStyle(archetypeItem, '::before');
-        if (before){
-          var extraRight = parseFloat(before.right || '0');
-          if (isFinite(extraRight) && extraRight < 0){ overhang += Math.abs(extraRight); }
-        }
       } catch(_){}
     }
+    if (cover < 0 || !isFinite(cover)) cover = 0;
+    overhang += cover;
     if (!isFinite(overhang) || overhang < 0){ overhang = 0; }
+    track.style.setProperty('--rg-arch-cover', cover + 'px');
     track.style.setProperty('--rg-arch-gap', overhang + 'px');
     track.style.setProperty('--rg-first-gap', (overhang + (isFinite(edgeGap) ? edgeGap : 0)) + 'px');
   }
