@@ -9428,54 +9428,61 @@ window.__openCredits = function(orderTitles){
         max: 0,
         key: 'ticket-taker',
         videoFile: 'ticket-taker',
+        imageFile: 'ticket',
         title: 'The Ticket-Taker',
         description: 'You’ve just stepped inside the theatre. You keep the reels turning and the crowds flowing — the unsung guardian of the silver screen.'
       },
       {
         min: 1,
         max: 2,
-        key: 'tpopcorn',
-        videoFile: 'tpopcorn',
+        key: 'popcorn',
+        videoFile: 'popcorn',
+        imageFile: 'popcorn',
         title: 'The Popcorn Clerk',
         description: 'Sticky floors, buttery hands, and pure movie magic. You fuel the fantasy one scoop at a time — the aroma of every matinee is your legacy.'
       },
       {
         min: 3,
         max: 4,
-        key: 'tstand-in',
-        videoFile: 'tstand-in',
+        key: 'stand-in',
+        videoFile: 'stand-in',
+        imageFile: 'stand-in',
         title: 'The Stand-In',
         description: 'You’re in the frame, but just out of focus. Always ready for your cue, you make the stars shine brighter — even if no one remembers your name.'
       },
       {
         min: 5,
         max: 6,
-        key: 'tprops',
-        videoFile: 'tprops',
+        key: 'props',
+        videoFile: 'props',
+        imageFile: 'props',
         title: 'The Prop Master',
         description: 'You build the worlds others dream in. Every cigarette case, every fake revolver, every flickering sign — your craft sells the illusion.'
       },
       {
         min: 7,
         max: 8,
-        key: 'tstar',
-        videoFile: 'tstar',
+        key: 'star',
+        videoFile: 'star',
+        imageFile: 'star',
         title: 'A Hollywood Star',
         description: 'The spotlight bends toward you. Lines delivered, close-ups flawless — you’re the face on the poster, the reason the crowd still believes.'
       },
       {
         min: 9,
         max: 9,
-        key: 'tdirector',
-        videoFile: 'tdirector',
+        key: 'director',
+        videoFile: 'director',
+        imageFile: 'director',
         title: 'The Director',
         description: 'You call the shots. Angles, edits, emotion — all orbit your vision. The city itself bends to your storyboards.'
       },
       {
         min: 10,
         max: Infinity,
-        key: 'tmogul',
-        videoFile: 'tmogul',
+        key: 'mogul',
+        videoFile: 'mogul',
+        imageFile: 'mogul',
         title: 'The Hollywood Mogul',
         description: 'You own the backlot, the skyline, the dream factory. Every deal’s a fade-in, every fortune a final cut — and the credits always end with your name.'
       }
@@ -9485,7 +9492,10 @@ window.__openCredits = function(orderTitles){
       var entry = map[i];
       if (score >= entry.min && score <= entry.max){ chosen = entry; break; }
     }
-    var imageBase = (chosen.videoFile || chosen.key || '').replace(/\s+/g,'-');
+    var imageBase = (chosen.imageFile || chosen.videoFile || chosen.key || '').replace(/\s+/g,'-');
+    var videoBase = (chosen.videoFile || chosen.key || '').replace(/\s+/g,'-');
+    var posterPath = imageBase ? ('images/results/' + imageBase + '.png') : null;
+    var videoPath = videoBase ? ('videos/results/' + videoBase + '.mp4') : null;
     var description = chosen.description || '';
     var scoreLine = 'You got ' + score + ' out of ' + total + ' questions.';
     var titleLine = chosen.title ? ('You’re ' + chosen.title + '. ') : '';
@@ -9493,10 +9503,10 @@ window.__openCredits = function(orderTitles){
     var clip = {
       kind: 'archetype',
       title: chosen.title,
-      video: 'videos/results/' + (chosen.videoFile || chosen.key) + '.mp4',
+      video: videoPath,
       logo: null,
-      poster: 'images/results/' + imageBase + '.png',
-      thumbnail: 'images/results/' + imageBase + '.png',
+      poster: posterPath,
+      thumbnail: posterPath,
       correct: true,
       score: score,
       total: total
