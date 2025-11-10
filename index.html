@@ -8438,10 +8438,9 @@ window.__openCredits = function(orderTitles){
         '#rg-rail-tooltip{position:absolute;left:50%;transform:translate(-50%,12px);bottom:100%;padding:14px 18px;border-radius:14px;background:rgba(6,6,6,.92);box-shadow:0 20px 48px rgba(0,0,0,.65);font-size:14px;line-height:1.45;max-width:min(420px,80vw);text-align:center;letter-spacing:.01em;opacity:0;pointer-events:none;transition:opacity .3s ease,transform .3s ease;}',
         '#rg-rail-tooltip::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:10px solid transparent;border-top-color:rgba(6,6,6,.92);}',
         '#rg-rail-tooltip.show{opacity:1;transform:translate(-50%,0);pointer-events:auto;}',
-        '#rg-thumb-track{display:flex;gap:16px;overflow-x:auto;--rg-edge-gap:clamp(64px,8vw,108px);--rg-arch-gap:240px;--rg-first-gap:calc(var(--rg-arch-gap) + var(--rg-edge-gap));padding:16px var(--rg-edge-gap) 12px var(--rg-edge-gap);scroll-snap-type:x mandatory;scroll-padding-left:var(--rg-edge-gap);scroll-padding-right:var(--rg-edge-gap);cursor:grab;touch-action:pan-y;}',
+        '#rg-thumb-track{display:flex;gap:16px;overflow-x:auto;--rg-edge-gap:clamp(64px,8vw,108px);--rg-arch-gap:240px;--rg-first-gap:calc(var(--rg-arch-gap) + var(--rg-edge-gap));padding:16px var(--rg-edge-gap) 12px var(--rg-edge-gap);scroll-snap-type:x mandatory;scroll-padding-left:var(--rg-edge-gap);scroll-padding-right:var(--rg-edge-gap);cursor:grab;touch-action:pan-y;scrollbar-width:none;-ms-overflow-style:none;}',
         '#rg-thumb-track.dragging{cursor:grabbing;}',
-        '#rg-thumb-track::-webkit-scrollbar{height:6px;}',
-        '#rg-thumb-track::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:999px;}',
+        '#rg-thumb-track::-webkit-scrollbar{display:none;}',
         '.rg-thumb-item{position:relative;flex:0 0 auto;width:160px;display:flex;flex-direction:column;gap:6px;scroll-snap-align:start;}',
         '.rg-thumb-item.archetype{position:sticky;left:0;z-index:4;margin-right:0;}',
         '.rg-thumb-item.archetype::before{content:"";position:absolute;top:-32px;bottom:-32px;left:calc(-1 * var(--rg-arch-cover, 200px));width:calc(100% + var(--rg-arch-cover, 200px));z-index:-1;background:rgba(0,0,0,.92);border-radius:40px;box-shadow:0 32px 76px rgba(0,0,0,.72);pointer-events:none;}',
@@ -8528,19 +8527,24 @@ window.__openCredits = function(orderTitles){
       var track = root.querySelector('#rg-thumb-track');
       if (track && !track.__rgDragBound){
         track.__rgDragBound = true;
-        var dragState = { active: false, startX: 0, startScroll: 0, moved: false, pointerId: null };
+        var dragState = { active: false, startX: 0, startScroll: 0, moved: false, pointerId: null, startButton: null };
         var ignoreClick = false;
         var endDrag = function(ev){
           if (!dragState.active) return;
+          var startButton = dragState.startButton;
+          var wasMoved = dragState.moved;
           dragState.active = false;
           track.classList.remove('dragging');
           if (dragState.pointerId !== null){
             try { track.releasePointerCapture(dragState.pointerId); } catch(_){}
           }
           dragState.pointerId = null;
-          if (dragState.moved){
+          dragState.startButton = null;
+          if (wasMoved){
             ignoreClick = true;
             setTimeout(function(){ ignoreClick = false; }, 0);
+          } else if (startButton && typeof startButton.click === 'function' && !startButton.disabled){
+            requestAnimationFrame(function(){ startButton.click(); });
           }
         };
         track.addEventListener('pointerdown', function(ev){
@@ -8551,6 +8555,7 @@ window.__openCredits = function(orderTitles){
           dragState.startScroll = track.scrollLeft;
           dragState.moved = false;
           dragState.pointerId = ev.pointerId;
+          dragState.startButton = ev.target && ev.target.closest ? ev.target.closest('button.rg-thumb-btn') : null;
           track.classList.add('dragging');
           try { track.setPointerCapture(ev.pointerId); } catch(_){}
         });
