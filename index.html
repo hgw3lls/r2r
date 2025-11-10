@@ -8425,6 +8425,7 @@ window.__openCredits = function(orderTitles){
 
   var reviewClips = [];
   var reviewCurrentIndex = 0;
+  var legacyShowRG = (typeof window.showRG === 'function') ? window.showRG : null;
 
   function ensureRGDom(){
     var root = document.getElementById('rg-overlay');
@@ -8866,6 +8867,24 @@ window.__openCredits = function(orderTitles){
       renderReviewGallery(root, clipData);
     }
     console.log('[2M] review gallery shown with', (order||[]).length, 'items');
+    return true;
+  }
+
+  try {
+    window.__legacyShowRG = window.__legacyShowRG || legacyShowRG;
+    window.showRG = function(payload){
+      try {
+        return showRG(payload);
+      } catch (err) {
+        console.error('[2M] review gallery failed', err);
+        if (legacyShowRG) {
+          try { return legacyShowRG(payload); } catch(_) {}
+        }
+        return false;
+      }
+    };
+  } catch (err) {
+    console.warn('[2M] unable to override showRG', err);
   }
 
   ['__openCredits','openCredits','openCreditsModal','launchCredits','__showCredits','showCredits'].forEach(function(k){
