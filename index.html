@@ -10177,6 +10177,80 @@ window.__openCredits = function(orderTitles){
 
   const __r2r_isAndroidWebView = __r2r_detectAndroidWebView();
 
+  const SPLASH_MODE_KEY = 'r2r.splashMode';
+
+  function __r2r_readSplashOverride(){
+    try {
+      if (typeof window.__R2R_SPLASH_FORCE_MODE === 'string') {
+        const forced = window.__R2R_SPLASH_FORCE_MODE.toLowerCase();
+        if (forced === 'webview' || forced === 'desktop') return forced;
+        if (forced === 'auto') return null;
+      }
+    } catch(_){}
+    try {
+      const url = new URL(window.location.href);
+      const qp = url.searchParams.get('splashMode');
+      if (qp) {
+        const lowered = qp.toLowerCase();
+        if (lowered === 'webview' || lowered === 'desktop') return lowered;
+        if (lowered === 'auto') return null;
+      }
+    } catch(_){}
+    try {
+      const saved = localStorage.getItem(SPLASH_MODE_KEY);
+      if (saved) {
+        const lowered = saved.toLowerCase();
+        if (lowered === 'webview' || lowered === 'desktop') return lowered;
+      }
+    } catch(_){}
+    return null;
+  }
+
+  function __r2r_resolveSplashMode(){
+    const override = __r2r_readSplashOverride();
+    if (override) return override;
+    return __r2r_isAndroidWebView ? 'webview' : 'desktop';
+  }
+
+  let __r2r_activeSplashMode = __r2r_resolveSplashMode();
+
+  function __r2r_setSplashMode(mode){
+    if (typeof mode !== 'string') return false;
+    const lowered = mode.toLowerCase();
+    let next = null;
+    if (lowered === 'webview' || lowered === 'desktop') {
+      next = lowered;
+      try { localStorage.setItem(SPLASH_MODE_KEY, next); } catch(_){}
+      try { window.__R2R_SPLASH_FORCE_MODE = next; } catch(_){}
+    } else if (lowered === 'auto') {
+      try { localStorage.removeItem(SPLASH_MODE_KEY); } catch(_){}
+      try { window.__R2R_SPLASH_FORCE_MODE = 'auto'; } catch(_){}
+      next = __r2r_resolveSplashMode();
+    } else {
+      return false;
+    }
+    if (!next) return false;
+    if (__r2r_activeSplashMode === next) {
+      try { window.__R2R_SPLASH_MODE = next; } catch(_){}
+      return true;
+    }
+    __r2r_activeSplashMode = next;
+    try { window.__R2R_SPLASH_MODE = next; } catch(_){}
+    const splash = document.getElementById('splashOverlay');
+    if (splash && splash.classList.contains('show')) {
+      __r2r_prepareSplashVideo({});
+    }
+    return true;
+  }
+
+  try { window.__R2R_SPLASH_MODE = __r2r_activeSplashMode; } catch(_){}
+  try {
+    window.R2R_SPLASH = {
+      get mode(){ return __r2r_activeSplashMode; },
+      setMode(mode){ return __r2r_setSplashMode(mode); }
+    };
+  } catch(_){}
+
   let __r2r_firstLaunch = true;
   let __r2r_idleTimer = null;
   let __r2r_precachePromise = null;
@@ -10462,8 +10536,9 @@ window.__openCredits = function(orderTitles){
       v.setAttribute('controlslist','nodownload noremoteplayback');
       v.disableRemotePlayback = true;
       v.controls = false;
+      v.defaultMuted = true;
 
-      const useQueueStrategy = __r2r_isAndroidWebView === true;
+      const useQueueStrategy = __r2r_activeSplashMode === 'webview';
 
       if (!v.__r2rBoundHandlers){
         const onEnded = async () => {
@@ -10497,6 +10572,7 @@ window.__openCredits = function(orderTitles){
       } else {
         const chosen = await __r2r_pickSplashSource({ requireTitle, preferTitle, onFirst, onReset });
         await __r2r_setVideoSourceWithFallback(v, chosen);
+        try { if (v.paused) v.play().catch(()=>{}); } catch(_){}
       }
 
       const start = async () => {
@@ -10522,6 +10598,7 @@ window.__openCredits = function(orderTitles){
       v.addEventListener('loadedmetadata', () => setTimeout(() => { if (v.paused) start(); }, 160), { once:true });
       if (!useQueueStrategy) {
         setTimeout(() => { if (v.paused) start(); }, 200);
+        setTimeout(() => { if (v.paused) v.play().catch(()=>{}); }, 600);
       }
     })();
 
