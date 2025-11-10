@@ -5469,7 +5469,17 @@ button.exit.pill {
 <!-- ===== SPLASH ===== -->
 <script id="splashManifest" type="application/json">["videos/0.mp4","videos/1.mp4","videos/2.mp4"]</script>
 <div aria-label="Start Screen" id="splashOverlay" role="dialog">
-<video autoplay="" class="bgvid" loop="" muted="" playsinline="" preload="metadata"></video>
+<video
+  class="bgvid"
+  autoplay
+  muted
+  playsinline
+  webkit-playsinline
+  preload="auto"
+  disablepictureinpicture
+  controlslist="nodownload noremoteplayback"
+  crossorigin="anonymous"
+></video>
 <div class="vignette"></div>
 <div class="light-leaks"></div>
 <div class="dirt"></div>
@@ -6098,29 +6108,75 @@ clearIntervalSafe();
 
   async function getSplashList(){
     try {
+      if (Array.isArray(window.SPLASH_VIDEOS) && window.SPLASH_VIDEOS.length) {
+        return window.SPLASH_VIDEOS.slice();
+      }
+    } catch(_){}
+    let list = [];
+    try {
       const tag = document.getElementById('splashManifest');
       if (tag && tag.textContent.trim()) {
         const arr = JSON.parse(tag.textContent);
-        if (Array.isArray(arr) && arr.length) return arr.map(String);
+        if (Array.isArray(arr) && arr.length) {
+          list = arr.map(String);
+        }
       }
     } catch(e){}
-    const v = document.querySelector('#splashOverlay .bgvid');
-    if (v) {
-      const raw = v.getAttribute('data-candidates') || '';
-      const list = raw.split(',').map(s => s.trim()).filter(Boolean);
-      if (list.length) return list;
+    if (!list.length){
+      const v = document.querySelector('#splashOverlay .bgvid');
+      if (v) {
+        const raw = v.getAttribute('data-candidates') || '';
+        const parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
+        if (parsed.length) {
+          list = parsed;
+        }
+      }
     }
-    return ['videos/splash_loop.mp4'];
+    if (!list.length){
+      list = ['videos/splash_loop.mp4'];
+    }
+    try { window.SPLASH_VIDEOS = list.slice(); } catch(_){}
+    return list;
   }
   async function prepareSplashVideo(){
-    const v = document.querySelector('#splashOverlay .bgvid'); if (!v) return;
-    try { v.pause(); } catch(_) {}
-    v.removeAttribute('src'); for (const s of Array.from(v.querySelectorAll('source'))) s.remove(); v.load();
-    const list = await getSplashList(); const choice = list[Math.floor(Math.random()*list.length)];
-    const s = document.createElement('source'); s.src = choice;
-    s.type = choice.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4'; v.appendChild(s);
-    const startRandom = async () => { try { const dur = (v && isFinite(v.duration)) ? v.duration : 0; if (dur>2) v.currentTime = Math.random()*Math.max(0, dur-1.0); } catch(_){} try{ await v.play(); }catch(_){} };
-    v.onloadedmetadata = () => startRandom(); v.load();
+    const list = await getSplashList();
+    try { window.SPLASH_VIDEOS = list.slice(); } catch(_){}
+    const override = (function(){
+      try {
+        return (window.__r2rSplashOverrideOptions && typeof window.__r2rSplashOverrideOptions === 'object')
+          ? window.__r2rSplashOverrideOptions
+          : null;
+      } catch(_) { return null; }
+    })();
+    try { window.__r2rSplashOverrideOptions = null; } catch(_){}
+    const markPrimed = () => {
+      try {
+        window.__r2rSplashPrimed = true;
+        window.__r2rSplashLastPrimedAt = (typeof performance !== 'undefined' && performance.now)
+          ? performance.now()
+          : Date.now();
+      } catch(_){}
+    };
+    if (typeof __r2r_prepareSplashVideo === 'function') {
+      markPrimed();
+      return __r2r_prepareSplashVideo(override || {});
+    }
+    const v = document.querySelector('#splashOverlay .bgvid');
+    if (!v) return;
+    try { v.pause(); } catch(_){}
+    v.removeAttribute('src');
+    Array.from(v.querySelectorAll('source')).forEach(node => node.remove());
+    v.load();
+    const choice = list[Math.floor(Math.random()*list.length)];
+    if (!choice) return;
+    const source = document.createElement('source');
+    source.src = choice;
+    source.type = choice.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4';
+    v.appendChild(source);
+    const start = async () => { try { await v.play(); } catch(_){} };
+    v.onloadedmetadata = () => start();
+    v.load();
+    markPrimed();
   }
   function showSplash(){
     hideBigCountdown();
@@ -6736,50 +6792,6 @@ document.addEventListener('DOMContentLoaded', function () {
   if (h) {
     h.innerHTML = '<img src="images/howto.png" alt="How to Play" class="howto-img">';
   }
-});
-</script>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-  const splash = document.getElementById('splashOverlay');
-  if (!splash) return;
-  const vid = splash.querySelector('video.bgvid') || splash.querySelector('video');
-  if (!vid) return;
-
-  const list = ["videos/splash/0.mp4", "videos/splash/1.mp4", "videos/splash/2.mp4", "videos/splash/3.mp4", "videos/splash/againsttheropes.mp4", "videos/splash/airforceone.mp4", "videos/splash/alexcross.mp4", "videos/splash/americansplendor.mp4", "videos/splash/antwonefisher.mp4", "videos/splash/avengers.mp4", "videos/splash/captainamerica.mp4", "videos/splash/christmasstory.mp4", "videos/splash/cle-cityonschedule.mp4", "videos/splash/crackerfactory.mp4", "videos/splash/deerhunter.mp4", "videos/splash/doubledragon.mp4", "videos/splash/escapeartist.mp4", "videos/splash/fortunecookie.mp4", "videos/splash/funsize.mp4", "videos/splash/ghettofreaks.mp4", "videos/splash/industrialcle.mp4", "videos/splash/itrunsinthefamily.mp4", "videos/splash/judas.mp4", "videos/splash/kidfromcle.mp4", "videos/splash/landmarks.mp4", "videos/splash/lightofday.mp4", "videos/splash/majorleague.mp4", "videos/splash/ohinohio.mp4", "videos/splash/onepotatotwopotato.mp4", "videos/splash/onetrickpony.mp4", "videos/splash/scenes_concat copy 2.mp4", "videos/splash/scenes_concat copy 3.mp4", "videos/splash/scenes_concat copy.mp4", "videos/splash/scenes_concat.mp4", "videos/splash/shawshankredemption.mp4", "videos/splash/snowwhite.mp4", "videos/splash/soloist.mp4", "videos/splash/spiderman3.mp4", "videos/splash/strangerthanparadise.mp4", "videos/splash/superman.mp4", "videos/splash/takeshelter.mp4", "videos/splash/thegathering.mp4", "videos/splash/theland.mp4", "videos/splash/vid.mp4", "videos/splash/vid1.mp4", "videos/splash/vid2.mp4", "videos/splash/vid3.mp4", "videos/splash/w2c-luce.mp4"];
-  if (!list.length) return;
-
-  if (vid.hasAttribute('loop')) vid.removeAttribute('loop');
-
-  let idx = Math.floor(Math.random() * list.length);
-  function setSrc(i) {
-    const src = list[i];
-    if (!src) return;
-    vid.src = src;
-    vid.load();
-    const p = vid.play();
-    if (p && typeof p.catch === 'function') p.catch(() => {});
-  }
-
-  setSrc(idx);
-
-  vid.addEventListener('ended', function () {
-    idx = (idx + 1) % list.length;
-    setSrc(idx);
-  });
-
-  let rotateTimer = setInterval(function () {
-    if (vid.paused) return;
-    idx = (idx + 1) % list.length;
-    setSrc(idx);
-  }, 12000);
-
-  const obs = new MutationObserver(() => {
-    if (!document.body.contains(splash) || splash.style.display === 'none' || !splash.classList.contains('show')) {
-      clearInterval(rotateTimer);
-      obs.disconnect();
-    }
-  });
-  obs.observe(document.body, { attributes: true, childList: true, subtree: true });
 });
 </script>
 <script>
@@ -10139,9 +10151,11 @@ window.__openCredits = function(orderTitles){
       const pool = await __r2r_getSplashList();
       const raw = [].concat(TITLE_CANDIDATES, Array.isArray(pool) ? pool : [], [FALLBACK_SRC]);
       const unique = Array.from(new Set(raw.filter(Boolean)));
-      await Promise.all(unique.map(async function(src){
+      for (const src of unique){
         try {
-          if (__r2r_sourceStatus.has(src) && __r2r_sourceStatus.get(src) === true) return;
+          if (__r2r_sourceStatus.has(src) && __r2r_sourceStatus.get(src) === true) {
+            continue;
+          }
           var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
           var timeout = null;
           if (controller){
@@ -10169,7 +10183,14 @@ window.__openCredits = function(orderTitles){
         } catch(e){
           __r2r_markSource(src, false);
         }
-      }));
+        try {
+          if (typeof requestIdleCallback === 'function') {
+            await new Promise(function(resolve){ requestIdleCallback(resolve, { timeout: 120 }); });
+          } else {
+            await new Promise(function(resolve){ setTimeout(resolve, 0); });
+          }
+        } catch(_){}
+      }
     })();
     return __r2r_precachePromise;
   }
@@ -10256,6 +10277,7 @@ window.__openCredits = function(orderTitles){
           return;
         }
 
+        try { videoEl.pause(); } catch(_){}
         Array.from(videoEl.querySelectorAll('source')).forEach(function(node){ node.remove(); });
         videoEl.removeAttribute('src');
         videoEl.load();
@@ -10295,46 +10317,89 @@ window.__openCredits = function(orderTitles){
     const v = document.querySelector('#splashOverlay .bgvid');
     if (!v) return;
 
-    // autoplay-friendly defaults
-    v.muted = true;
-    v.loop  = false;                 // manual loop so we can change source at end
-    v.preload = 'auto';
-    v.playsInline = true;
-    v.setAttribute('webkit-playsinline','');
-    v.disableRemotePlayback = true;
+    if (v.__r2rPreparingPromise) {
+      try { await v.__r2rPreparingPromise; } catch(_){}
+    }
 
-    const queue = await __r2r_buildSplashQueue({ requireTitle, preferTitle, onFirst, onReset });
-    await __r2r_setVideoSourceFromQueue(v, queue);
+    v.__r2rPreparingPromise = (async () => {
+      // autoplay-friendly defaults
+      v.muted = true;
+      v.loop  = false;                 // manual loop so we can change source at end
+      v.preload = 'auto';
+      v.playsInline = true;
+      v.setAttribute('webkit-playsinline','');
+      v.setAttribute('playsinline','');
+      v.setAttribute('muted','');
+      v.setAttribute('autoplay','');
+      v.setAttribute('disablepictureinpicture','');
+      v.setAttribute('controlslist','nodownload noremoteplayback');
+      v.disableRemotePlayback = true;
+      v.controls = false;
 
-    const start = async () => {
-      try {
-        if (isFinite(v.duration) && v.duration > 3) {
-          v.currentTime = Math.min(Math.max(0.5, Math.random() * (v.duration - 1.5)), v.duration - 0.5);
-        }
-      } catch(_){}
-      try { await v.play(); } catch(_){}
-    };
+      if (!v.__r2rBoundHandlers){
+        const onEnded = async () => {
+          if (document.hidden) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+          }
+          await __r2r_prepareSplashVideo({});
+        };
+        const kick = () => {
+          if (v.paused) {
+            v.play().catch(()=>{});
+          }
+        };
+        const onWaiting = () => setTimeout(kick, 180);
+        const onStalled = () => setTimeout(kick, 180);
+        const onVisibility = () => {
+          if (!document.hidden) {
+            setTimeout(kick, 120);
+          }
+        };
+        v.addEventListener('ended', onEnded, { passive: true });
+        v.addEventListener('waiting', onWaiting, { passive: true });
+        v.addEventListener('stalled', onStalled, { passive: true });
+        document.addEventListener('visibilitychange', onVisibility, { passive: true });
+        v.__r2rBoundHandlers = { onEnded, onWaiting, onStalled, onVisibility };
+      }
 
-    const onCPT = () => { v.removeEventListener('canplaythrough', onCPT); start(); };
-    v.addEventListener('canplaythrough', onCPT, { once:true });
-    v.addEventListener('loadedmetadata', () => setTimeout(() => { if (v.paused) start(); }, 120), { once:true });
+      const queue = await __r2r_buildSplashQueue({ requireTitle, preferTitle, onFirst, onReset });
+      await __r2r_setVideoSourceFromQueue(v, queue);
 
-    v.addEventListener('ended', async () => {
-      await __r2r_prepareSplashVideo({}); // pick a fresh random (title rarely)
-    }, { passive: true });
+      const start = async () => {
+        try {
+          if (isFinite(v.duration) && v.duration > 0.6) {
+            const offset = Math.max(0, v.duration - 0.75);
+            v.currentTime = Math.min(0.25, offset);
+          }
+        } catch(_){}
+        try { await v.play(); } catch(_){}
+      };
 
-    const kick = () => { if (v.paused) v.play().catch(()=>{}); };
-    v.addEventListener('waiting', () => setTimeout(kick, 150));
-    v.addEventListener('stalled', () => setTimeout(kick, 150));
+      const onCPT = () => { v.removeEventListener('canplaythrough', onCPT); start(); };
+      v.addEventListener('canplaythrough', onCPT, { once:true });
+      v.addEventListener('loadedmetadata', () => setTimeout(() => { if (v.paused) start(); }, 160), { once:true });
+    })();
+
+    try {
+      await v.__r2rPreparingPromise;
+    } catch(_){} finally {
+      v.__r2rPreparingPromise = null;
+    }
   }
 
   function __r2r_patchShowSplash(){
     // If the app already defines showSplash, wrap it so our logic runs AFTER
     const orig = window.showSplash;
     window.showSplash = async function(){
-      try { orig && orig(); } catch(_){}
       const forceTitle = __r2r_firstLaunch === true;
-      await __r2r_prepareSplashVideo({ requireTitle: forceTitle, onFirst: forceTitle });
+      try { window.__r2rSplashPrimed = false; } catch(_){}
+      try { window.__r2rSplashOverrideOptions = { requireTitle: forceTitle, onFirst: forceTitle }; } catch(_){}
+      try { orig && orig(); } catch(_){}
+      let primed = false;
+      try { primed = window.__r2rSplashPrimed === true; } catch(_){}
+      if (!primed) {
+        await __r2r_prepareSplashVideo({ requireTitle: forceTitle, onFirst: forceTitle });
+      }
       __r2r_armSplashOneTapContinue();
       __r2r_firstLaunch = false;
     };
