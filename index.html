@@ -8960,6 +8960,30 @@ window.__openCredits = function(orderTitles){
       .replace(/\.[^/.]+$/, '')
       .trim();
     if (!clean) return null;
+
+    var code = clean.split(/[-_]/)[0] || clean;
+    code = code.toLowerCase();
+    var filmLogoMap = {
+      acs: 'acs',
+      af1: 'af1',
+      av: 'av',
+      ca: 'ca',
+      dh: 'dh',
+      fc: 'fc',
+      judas: 'judas',
+      kfc: 'kfc',
+      lod: 'lod',
+      sm: 'sm',
+      sm3: 'sm3',
+      soa: 'soa',
+      stp: 'stp',
+      u: 'u',
+      w2c: 'w2c'
+    };
+
+    var mapped = filmLogoMap[code];
+    if (mapped){ return 'images/films/' + mapped + '.png'; }
+
     return 'images/films/' + clean + '.png';
   }
   function assetFromListItem(item, title){
