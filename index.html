@@ -8954,8 +8954,13 @@ window.__openCredits = function(orderTitles){
     setInfoPanelCollapsed(false);
   }
   function logoFromBase(base){
-    var prefix = (base||'').split('-')[0];
-    return 'images/films/' + prefix + '.png';
+    if (!base) return null;
+    var clean = String(base)
+      .replace(/^.*\//, '')
+      .replace(/\.[^/.]+$/, '')
+      .trim();
+    if (!clean) return null;
+    return 'images/films/' + clean + '.png';
   }
   function assetFromListItem(item, title){
     // Prefer the explicit fields on item
